@@ -10,7 +10,7 @@ namespace minispdlog {
     class raw_string_formatter : public pattern_formatter::flag_formatter {
         public:
             explicit raw_string_formatter(std::string str) :str_(std::move(str)) {}
-            void format(const details::log_msg& msg,const std::tm& ctm_time, fmt::memory_buffer& dest) override {
+            void format(const details::log_msg&/*msg*/,const std::tm& /*ctm_time*/, fmt::memory_buffer& dest) override {
                 dest.append(str_.data(),str_.data() + str_.size());
             }
             std::unique_ptr<flag_formatter> clone() const override {
@@ -82,7 +82,7 @@ namespace minispdlog {
     //日志级别 %l
     class level_full_formatter : public pattern_formatter :: flag_formatter {
         public:
-            void format(const details::log_msg& msg,const std::tm& ctm_time, fmt::memory_buffer& dest) override {
+            void format(const details::log_msg& msg,const std::tm& /*ctm_time*/, fmt::memory_buffer& dest) override {
                 const char* level_str = level_to_string(msg.lvl);
                 dest.append(level_str, level_str + std::strlen(level_str));
             }
