@@ -10,7 +10,7 @@ namespace minispdlog {
     class raw_string_formatter : public pattern_formatter::flag_formatter {
         public:
             explicit raw_string_formatter(std::string str) :str_(std::move(str)) {}
-            void format(const details::log_msg& msg, fmt::memory_buffer& dest) override {
+            void format(const details::log_msg& msg,const std::tm& ctm_time, fmt::memory_buffer& dest) override {
                 dest.append(str_.data(),str_.data() + str_.size());
             }
             std::unique_ptr<flag_formatter> clone() const override {
@@ -82,8 +82,8 @@ namespace minispdlog {
     //日志级别 %l
     class level_full_formatter : public pattern_formatter :: flag_formatter {
         public:
-            void format(const details::log_msg& msg,const std::tm&, fmt::memory_buffer& dest) override {
-                const char* level_str = details::level_to_string(msg.level);
+            void format(const details::log_msg& msg,const std::tm& ctm_time, fmt::memory_buffer& dest) override {
+                const char* level_str = level_to_string(msg.lvl);
                 dest.append(level_str, level_str + std::strlen(level_str));
             }
             std::unique_ptr<flag_formatter> clone() const override {
@@ -167,7 +167,7 @@ namespace minispdlog {
                     case 'M': formatters_.push_back(std::make_unique<minute_formatter>()); break;
                     case 'S': formatters_.push_back(std::make_unique<second_formatter>()); break;
                     case 'L': formatters_.push_back(std::make_unique<level_full_formatter>()); break;
-                    case 'l': formatters_.push_back(std::make_unique<level_formatter>()); break;
+                    case 'l': formatters_.push_back(std::make_unique<level_full_formatter>()); break;
                     case 'n': formatters_.push_back(std::make_unique<logger_name_formatter>()); break;
                     case 'v': formatters_.push_back(std::make_unique<pay_load>()); break;
                     case 't': formatters_.push_back(std::make_unique<thread_id_formatter>()); break;

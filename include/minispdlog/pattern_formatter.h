@@ -23,7 +23,7 @@ namespace minispdlog {
             ~pattern_formatter() override = default;
             void format(const details::log_msg& msg, fmt::memory_buffer& dest) override;
             std::unique_ptr<formatter> clone() const override;
-            void set_pattern(const std::string& pattern);
+            void set_pattern(std::string pattern);
         
         public:
             //抽象基类 处理单个占位符
@@ -31,6 +31,7 @@ namespace minispdlog {
                 public:
                     virtual ~flag_formatter() = default;
                     virtual void format(const details::log_msg& msg,
+                                        const std::tm& ctm_time,
                                        fmt::memory_buffer& dest) = 0;
                     virtual std::unique_ptr<flag_formatter> clone() const = 0;
             };
