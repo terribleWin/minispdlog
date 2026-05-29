@@ -27,8 +27,13 @@ struct source_loc {
 };
 #endif
 
-// 日志消息结构体
-// 这是日志系统的核心数据结构,包含了一条日志的所有信息
+
+/**
+ * @brief 日志消息结构体，包含一条日志的全部信息
+ * 
+ * 作为日志系统内部的数据载体，在 logger → formatter → sink 之间传递。
+ * 提供三个构造函数以支持不同场景的便捷创建。
+ */
 struct log_msg {
     log_msg() = default;
     
@@ -73,7 +78,7 @@ struct log_msg {
     source_loc source;                    // 源码位置
     string_view_t payload;                // 实际日志内容
     
-    // 颜色范围(用于格式化时着色,由 formatter 设置)
+    // 颜色范围
     mutable size_t color_range_start{0};
     mutable size_t color_range_end{0};
 };

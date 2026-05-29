@@ -4,6 +4,8 @@
 #include "../details/log_msg.h"
 #include <mutex>
 #include <memory>
+#include "../pattern_formatter.h"
+#include "../formatter.h"
 namespace minispdlog {
     namespace sinks {
 class sink {
@@ -18,13 +20,14 @@ class sink {
         virtual bool should_log(level msg_level) const = 0;
         virtual void set_formatter(std::unique_ptr<formatter> sink_formatter) =  0;
 };
-template<typename MutexT = std::mutex>
+using sink_ptr = std::shared_ptr<sink>;
+template<typename Mutex>
 class base_sink : public sink {
     public:
         base_sink()
             : level_(level::trace), formatter_(std::make_unique<pattern_formatter>()) {}
-        base_sink(const bace_sink&) = delete;
-        base_sink& operator=(const base_sink&) delete;
+        base_sink(const base_sink&) = delete;
+        base_sink& operator=(const base_sink&) = delete;
         void log(const details::log_msg& msg) override {
             std::lock_guard<Mutex> lock(mutex_);
             sink_it_(msg);
@@ -39,6 +42,10 @@ class base_sink : public sink {
         }
         bool should_log(level msg_level) const override {
             return msg_level >= get_level();
+        }
+        void flush() override {
+            std::lock_guard<Mutex> lock(mutex_);
+            flush_();
         }
         void set_formatter(std::unique_ptr<formatter> sink_formatter) override {
             std::lock_guard<Mutex> lock(mutex_);

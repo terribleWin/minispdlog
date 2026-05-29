@@ -78,7 +78,7 @@ void test_string_utils() {
 
 int main() {
     std::cout << "╔════════════════════════════════════════╗\n";
-    std::cout << "║   MiniSpdlog 第1天测试 - 基础框架    ║\n";
+    std::cout << "║   MiniSpdlog 第1天测试 - 基础框架       ║\n";
     std::cout << "╚════════════════════════════════════════╝\n";
     
     try {
