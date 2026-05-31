@@ -23,6 +23,6 @@ constexpr const char* VERSION ="0.1.0";
     #define MINISPDLOG_API
 #endif
 
-using string_view_t = std::string;
+using string_view_t = std::string_view;
 using log_clock = std::chrono::system_clock;
 }
