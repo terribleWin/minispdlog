@@ -55,7 +55,7 @@ namespace minispdlog {
                     name_,
                     lvl,
                     string_view_t(buf.data(),buf.size())//格式化以后的字符串
-                );
+                );//初始化 log_msg
                 sink_it_(log);
             }
                 //sink 管理
@@ -70,8 +70,9 @@ namespace minispdlog {
                 void flush();    
                 void flush_on(level log_level);
                 const std::string& name() const;
-            protected:
+                // 内部 API：供异步线程池调用
                 virtual void  sink_it_(const details::log_msg& msg);
+            protected:
                 std::string name_;
                 std::vector<sinks::sink_ptr> sinks_;
                 level level_{level::trace};

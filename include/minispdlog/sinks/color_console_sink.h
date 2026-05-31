@@ -2,6 +2,7 @@
 
 #include "base_sink.h"
 #include <fstream>
+#include <iostream>
 #include <mutex>
 #include <array>
 

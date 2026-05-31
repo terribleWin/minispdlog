@@ -68,6 +68,8 @@ struct log_msg {
     
     log_msg(const log_msg&) = default;
     log_msg& operator=(const log_msg&) = default;
+    log_msg(log_msg&&) = default;
+    log_msg& operator=(log_msg&&) = default;
     
     // 核心字段
     string_view_t logger_name;           // Logger 名称
