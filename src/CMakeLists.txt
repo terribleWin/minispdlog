@@ -4,6 +4,8 @@ set(MINISPDLOG_SOURCES
     pattern_formatter.cpp
     logger.cpp
     details/utils.cpp
+    details/thread_pool.cpp
+    registry.cpp
     formatter.cpp
 )
 
