@@ -8,6 +8,7 @@
 #include "sinks/console_sink.h"
 #include "sinks/color_console_sink.h"
 #include "sinks/file_sink.h"   
+#include "sinks/rotating_file_sink.h"
 #include <fmt/format.h>
 #include <memory>
 #include <string>
@@ -45,7 +46,7 @@ namespace minispdlog{
 }
     //设置默认logger
     inline void set_default_logger(std::shared_ptr<logger> new_default_logger) {
-    registry::instance().set_default_logger(std::move(new_default_logger));
+        registry::instance().set_default_logger(std::move(new_default_logger));
 }
     //设置所有 logger 的级别
     inline void set_level(level log_level) {
@@ -85,6 +86,29 @@ namespace minispdlog{
     bool truncate = false
 ) {
     auto sink = std::make_shared<sinks::file_sink_mt>(filename, truncate);
+    auto new_logger = std::make_shared<logger>(logger_name, sink);
+    register_logger(new_logger);
+    return new_logger;
+}
+    //创建单线程文件 logger（无锁，性能更高）
+    inline std::shared_ptr<logger> basic_logger_st(
+    const std::string& logger_name,
+    const std::string& filename,
+    bool truncate = false
+) {
+    auto sink = std::make_shared<sinks::file_sink_st>(filename, truncate);
+    auto new_logger = std::make_shared<logger>(logger_name, sink);
+    register_logger(new_logger);
+    return new_logger;
+}
+    //创建滚动文件 logger
+    inline std::shared_ptr<logger> rotating_logger_mt(
+    const std::string& logger_name,
+    const std::string& filename,
+    size_t max_size,
+    size_t max_files
+) {
+    auto sink = std::make_shared<sinks::rotating_file_sink_mt>(filename, max_size, max_files);
     auto new_logger = std::make_shared<logger>(logger_name, sink);
     register_logger(new_logger);
     return new_logger;

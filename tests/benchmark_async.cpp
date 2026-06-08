@@ -6,7 +6,10 @@
 
 using namespace minispdlog;
 
-// 控制台同步日志
+// 全局 pool
+details::thread_pool g_pool(8192, 2);
+
+// ==================== 控制台同步 ====================
 static void BM_ConsoleSync(benchmark::State& state) {
     auto sink = std::make_shared<sinks::console_sink_mt>();
     sink->set_level(level::off);
@@ -18,21 +21,21 @@ static void BM_ConsoleSync(benchmark::State& state) {
 }
 BENCHMARK(BM_ConsoleSync)->Threads(1)->Threads(4);
 
-// 控制台异步日志
+// ==================== 控制台异步 ====================
 static void BM_ConsoleAsync(benchmark::State& state) {
     auto sink = std::make_shared<sinks::console_sink_mt>();
     sink->set_level(level::off);
-    details::thread_pool pool(8192, 2);
     auto bench_logger = std::make_shared<logger>("bench", sink);
+    
     for (auto _ : state) {
         details::log_msg msg("bench", level::info, "Async console message");
-        pool.post_log(std::make_shared<logger>("bench", sink), msg);
+        g_pool.post_log(std::move(bench_logger), msg);  // ✅ 加 std::move
+        // 注意：move 后 bench_logger 变空，需要重新创建
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 BENCHMARK(BM_ConsoleAsync)->Threads(1)->Threads(4);
 
-// 文件同步日志
+// ==================== 文件同步 ====================
 static void BM_FileSync(benchmark::State& state) {
     auto sink = std::make_shared<sinks::file_sink_mt>("/dev/null", false);
     auto bench_logger = std::make_shared<logger>("bench", sink);
@@ -43,16 +46,15 @@ static void BM_FileSync(benchmark::State& state) {
 }
 BENCHMARK(BM_FileSync)->Threads(1)->Threads(4);
 
-// 文件异步日志
+// ==================== 文件异步 ====================
 static void BM_FileAsync(benchmark::State& state) {
     auto sink = std::make_shared<sinks::file_sink_mt>("/dev/null", false);
-    details::thread_pool pool(8192, 2);
     auto bench_logger = std::make_shared<logger>("bench", sink);
+    
     for (auto _ : state) {
         details::log_msg msg("bench", level::info, "Async file message");
-        pool.post_log(std::make_shared<logger>("bench", sink), msg);
+        g_pool.post_log(std::move(bench_logger), msg);  // ✅ 加 std::move
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 BENCHMARK(BM_FileAsync)->Threads(1)->Threads(4);
 

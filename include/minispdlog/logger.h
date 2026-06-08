@@ -9,7 +9,7 @@
 #include <string>
 
 namespace minispdlog {
-    class MINISPDLOG_API logger {
+    class MINISPDLOG_API logger : public std::enable_shared_from_this<logger> {
         public:
             explicit logger(const std::string name);
             logger(std::string name, sinks::sink_ptr single_sink);

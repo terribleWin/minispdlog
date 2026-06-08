@@ -1,0 +1,385 @@
+@startuml minispdlog_uml
+
+  skinparam classAttributeIconSize 0
+  skinparam class {
+      BackgroundColor<<interface>> #E3F2FD
+      BackgroundColor<<abstract>> #FFF3E0
+      BackgroundColor<<template>> #F3E5F5
+  }
+  skinparam linetype ortho
+
+  title minispdlog 类图 - 核心架构与继承关系
+
+  ' ============================================================
+  ' 辅助类
+  ' ============================================================
+  class std::enable_shared_from_this<logger> {
+  }
+  class std::mutex
+  class null_mutex {
+      + lock()
+      + unlock()
+  }
+  note right of null_mutex : 空锁（Policy模式）\n_st版本零开销
+
+  ' ============================================================
+  ' Logger 模块
+  ' ============================================================
+  class logger <<abstract>> {
+      - name_: string
+      - sinks_: vector<sink_ptr>
+      - level_: level {trace}
+      - flush_level_: level {off}
+      + logger(name)
+      + logger(name, single_sink)
+      + logger(name, sinks)
+      + trace(fmt, args...)
+      + debug(fmt, args...)
+      + info(fmt, args...)
+      + warn(fmt, args...)
+      + error(fmt, args...)
+      + critical(fmt, args...)
+      + log(lvl, fmt, args...)
+      + add_sink(sink_ptr)
+      + remove_sink(sink_ptr)
+      + sinks()
+      + set_level(level)
+      + get_level(): level
+      + should_log(level): bool
+      + flush()
+      + flush_on(level)
+      + name(): string
+      + {virtual} sink_it_(log_msg)
+  }
+
+  class async_logger {
+      + async_logger(name, sinks)
+      + {override} sink_it_(log_msg)
+  }
+  note right of async_logger : 重写 sink_it_()\n将消息投递到线程池队列
+
+  std::enable_shared_from_this <|-- logger
+  logger <|-- async_logger
+
+  ' ============================================================
+  ' Registry 模块
+  ' ============================================================
+  class registry {
+      - {static} instance(): registry&
+      - mutex_: mutex
+      - loggers_: unordered_map<string, shared_ptr<logger>>
+      - default_logger_: shared_ptr<logger>
+      + register_logger(shared_ptr<logger>)
+      + get(name): shared_ptr<logger>
+      + drop(name)
+      + drop_all()
+      + default_logger(): shared_ptr<logger>
+      + set_default_logger(shared_ptr<logger>)
+      + set_level(level)
+      + flush_all()
+  }
+  note bottom of registry : Meyers' Singleton\n构造函数创建默认color_console_sink
+
+  registry "1" *--> "0..*" logger : manages >
+  registry "1" *--> "0..1" logger : default_logger_ >
+
+  ' ============================================================
+  ' Sink 模块
+  ' ============================================================
+  class sink <<interface>> {
+      + {abstract} log(log_msg)
+      + {abstract} flush()
+      + {abstract} set_level(level)
+      + {abstract} get_level(): level
+      + {abstract} should_log(level): bool
+      + {abstract} set_formatter(unique_ptr<formatter>)
+  }
+
+  class base_sink <<abstract>> <<template>> {
+      # {mutable} mutex_: Mutex
+      # level_: level
+      # formatter_: unique_ptr<formatter>
+      + log(log_msg)
+      + flush()
+      + get_level(): level
+      + set_level(level)
+      + should_log(level): bool
+      + set_formatter(unique_ptr<formatter>)
+      # {abstract} sink_it_(log_msg)
+      # {abstract} flush_()
+      # format_message(log_msg, memory_buffer)
+  }
+
+  class console_sink <<template>> {
+      # sink_it_(log_msg)
+      # flush_()
+  }
+  class stderr_sink <<template>> {
+      # sink_it_(log_msg)
+      # flush_()
+  }
+  class file_sink <<template>> {
+      - file_: ofstream
+      + file_sink(filename, truncate)
+      # sink_it_(log_msg)
+      # flush_()
+  }
+  class color_console_sink <<template>> {
+      - colors_: array<string,7>
+      + color_console_sink()
+      # sink_it_(log_msg)
+      # flush_()
+  }
+  class color_stderr_sink <<template>> {
+      - colors_: array<string,7>
+      # sink_it_(log_msg)
+      # flush_()
+  }
+  class rotating_file_sink <<template>> {
+      - base_filename_: string
+      - max_size_: size_t
+      - max_files_: size_t
+      - current_size_: size_t
+      - file_: FILE*
+      + rotating_file_sink(base, max_size, max_files)
+      + filename(): string
+      + {static} calc_filename(base, index): string
+      # sink_it_(log_msg)
+      # flush_()
+      - rotate_()
+      - rename_file_(src, target): bool
+      - remove_file_(filename): bool
+      - file_exists_(filename): bool
+      - file_size_(filename): size_t
+  }
+
+  sink <|-- base_sink
+  base_sink <|-- console_sink
+  base_sink <|-- stderr_sink
+  base_sink <|-- file_sink
+  base_sink <|-- color_console_sink
+  base_sink <|-- color_stderr_sink
+  base_sink <|-- rotating_file_sink
+
+  logger "1" *--> "1..*" sink : sinks_ >
+
+  note right of base_sink
+      Policy-Based Design:
+      Mutex = std::mutex → _mt 多线程安全
+      Mutex = null_mutex → _st 零开销
+  end note
+
+  ' ============================================================
+  ' Formatter 模块
+  ' ============================================================
+  class formatter <<interface>> {
+      + {abstract} format(log_msg, memory_buffer)
+      + {abstract} clone(): unique_ptr<formatter>
+  }
+
+  class pattern_formatter {
+      - pattern_: string
+      - formatters_: vector<unique_ptr<flag_formatter>>
+      - last_log_secs_: seconds
+      - cached_tm_: tm
+      + pattern_formatter(pattern)
+      + format(log_msg, memory_buffer)
+      + clone(): unique_ptr<formatter>
+      + set_pattern(pattern)
+      - compile_pattern()
+      - get_time(log_msg): tm
+  }
+
+  class flag_formatter <<interface>> <<inner>> {
+      + {abstract} format(log_msg, tm, memory_buffer)
+      + {abstract} clone(): unique_ptr<flag_formatter>
+  }
+
+  class raw_string_formatter <<inner>> {
+      - str_: string
+      + format(...)
+  }
+  class year_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class month_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class day_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class hour_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class minute_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class second_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class level_full_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class logger_name_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class pay_load <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+  class thread_id_formatter <<inner>> {
+      + format(msg, ctm_time, dest)
+  }
+
+  formatter <|-- pattern_formatter
+  pattern_formatter +-- flag_formatter
+  flag_formatter <|-- raw_string_formatter
+  flag_formatter <|-- year_formatter
+  flag_formatter <|-- month_formatter
+  flag_formatter <|-- day_formatter
+  flag_formatter <|-- hour_formatter
+  flag_formatter <|-- minute_formatter
+  flag_formatter <|-- second_formatter
+  flag_formatter <|-- level_full_formatter
+  flag_formatter <|-- logger_name_formatter
+  flag_formatter <|-- pay_load
+  flag_formatter <|-- thread_id_formatter
+
+  base_sink ..> formatter : uses >
+  base_sink "1" *--> "1" formatter : formatter_ >
+
+  ' ============================================================
+  ' 消息载体模块
+  ' ============================================================
+  class log_msg {
+      + logger_name: string_view_t
+      + lvl: level
+      + time: time_point
+      + thread_id: size_t
+      + source: source_loc
+      + payload: string_view_t
+      + color_range_start: size_t {mutable}
+      + color_range_end: size_t {mutable}
+  }
+
+  class log_msg_buffer {
+      + buffer: string
+      + log_msg_buffer(log_msg)
+  }
+
+  class async_msg {
+      + msg_type: async_msg_type
+      + worker_ptr: shared_ptr<logger>
+      + async_msg(type, logger, log_msg)
+  }
+
+  log_msg <|-- log_msg_buffer
+  log_msg_buffer <|-- async_msg
+
+  note right of async_msg
+      worker_ptr 使用 shared_ptr
+      确保消息处理完前 logger 不被销毁
+  end note
+
+  ' ============================================================
+  ' 异步线程池模块
+  ' ============================================================
+  class mpmc_blocking_queue <<template>> {
+      - q_: circular_q<T>
+      - mutex_: mutex
+      - push_cv_: condition_variable
+      - pop_cv_: condition_variable
+      + enqueue(T&&)
+      + enqueue_nowait(T&&)
+      + dequeue_for(T&, milliseconds): bool
+      + overrun_count(): size_t
+      + size(): size_t
+  }
+
+  class circular_q <<template>> {
+      - max_items_: size_t
+      - v_: vector<T>
+      - head_: size_t
+      - tail_: size_t
+      - overrun_counter_: size_t
+      + push_back(T&&)
+      + front(): T&
+      + pop_front()
+      + empty(): bool
+      + full(): bool
+      + size(): size_t
+      + capacity(): size_t
+      + overrun_count(): size_t
+  }
+
+  class thread_pool {
+      - q_: mpmc_blocking_queue<async_msg>
+      - threads_: vector<thread>
+      + thread_pool(queue_size, threads_n)
+      + post_log(logger_ptr, log_msg)
+      + post_log_nowait(logger_ptr, log_msg)
+      + post_flush(logger_ptr)
+      + overrun_count(): size_t
+      - worker_loop_()
+      - process_next_msg(): bool
+  }
+
+  class thread_pool_manager {
+      - {static} instance(): thread_pool_manager&
+      - pool_: unique_ptr<thread_pool>
+      + init(queue_size, threads)
+      + pool(): thread_pool*
+  }
+
+  mpmc_blocking_queue "1" *--> "1" circular_q : q_ >
+  thread_pool "1" *--> "1" mpmc_blocking_queue : q_ >
+  thread_pool "1" o--> "1..*" std::thread : threads_ >
+  thread_pool_manager "1" *--> "0..1" thread_pool : pool_ >
+
+  async_msg ..> logger : worker_ptr >
+  async_logger ..> thread_pool : post_log >
+
+  ' ============================================================
+  ' 枚举与工具
+  ' ============================================================
+  enum level {
+      trace = 0
+      debug = 1
+      info = 2
+      warn = 3
+      error = 4
+      critical = 5
+      off = 6
+  }
+
+  enum async_msg_type {
+      log
+      flush
+      terminate
+  }
+
+  enum async_overflow_policy {
+      block
+      overrun_oldest
+  }
+
+  log_msg ..> level : uses >
+  async_msg ..> async_msg_type : uses >
+
+  ' ============================================================
+  ' 用户接口层 (minispdlog.h)
+  ' ============================================================
+  package "用户接口层 (minispdlog.h)" {
+      class "get(name): logger" as api_get
+      class "stdout_color_mt(name): logger" as api_stdout
+      class "basic_logger_mt(name,file): logger" as api_basic
+      class "rotating_logger_mt(name,file,max,maxf): logger" as api_rotating
+      class "info(fmt,args...)" as api_info
+  }
+
+  api_info ..> logger : default_logger()->info()
+  api_stdout ..> registry : register_logger()
+  api_stdout ..> color_console_sink : make_shared()
+  api_basic ..> file_sink : make_shared()
+  api_rotating ..> rotating_file_sink : make_shared()
+
+  @enduml

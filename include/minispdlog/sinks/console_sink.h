@@ -2,6 +2,7 @@
 #include "base_sink.h"
 #include <iostream>
 #include <mutex>
+
 namespace minispdlog {
     namespace sinks {
         template<typename ConsoleMutex>

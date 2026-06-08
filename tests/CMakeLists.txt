@@ -23,4 +23,12 @@ target_link_libraries(test_benchmark PRIVATE minispdlog Threads::Threads)
 # 测试8:Google Benchmark 性能测试
 add_executable(benchmark_async benchmark_async.cpp)
 target_link_libraries(benchmark_async PRIVATE minispdlog Threads::Threads benchmark)
-
+# 测试9:rotating_file 性能测试
+add_executable(test_rotating_file test_rotating_file.cpp)
+target_link_libraries(test_rotating_file PRIVATE minispdlog Threads::Threads)
+# 测试10:性能测试
+add_executable(test_performance  test_performance.cpp)
+target_link_libraries(test_performance PRIVATE minispdlog Threads::Threads)
+add_executable(benchmark_spdlog  benchmark_spdlog.cpp)
+target_include_directories(benchmark_spdlog PRIVATE ~/spdlog/include)
+target_link_libraries(benchmark_spdlog PRIVATE minispdlog Threads::Threads)
