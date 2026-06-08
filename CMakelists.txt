@@ -11,6 +11,11 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)   # ← 顺便修了：Wpendatic → Wpedantic
 endif()
 
+# Release 构建默认只保留 info 及以上，trace/debug 编译期移除
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_compile_definitions(MINISPDLOG_ACTIVE_LEVEL=MINISPDLOG_LEVEL_INFO)
+endif()
+
 add_subdirectory(third_party/fmt)
 add_subdirectory(src)
 add_subdirectory(tests)

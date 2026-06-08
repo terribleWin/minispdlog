@@ -144,4 +144,51 @@ namespace minispdlog{
     inline void critical(fmt::format_string<Args...> fmt, Args&&... args) {
         default_logger()->critical(fmt, std::forward<Args>(args)...);
     }
+
+// ========== 编译期日志宏（Release 下零开销） ==========
+// 与普通 API 的区别：当级别低于 MINISPDLOG_ACTIVE_LEVEL 时，
+// 整段代码在编译期被移除，不进二进制。
+
+#define MINISPDLOG_TRACE(...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_TRACE >= MINISPDLOG_ACTIVE_LEVEL) { \
+            minispdlog::trace(__VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_DEBUG(...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_DEBUG >= MINISPDLOG_ACTIVE_LEVEL) { \
+            minispdlog::debug(__VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_INFO(...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_INFO >= MINISPDLOG_ACTIVE_LEVEL) { \
+            minispdlog::info(__VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_WARN(...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_WARN >= MINISPDLOG_ACTIVE_LEVEL) { \
+            minispdlog::warn(__VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_ERROR(...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_ERROR >= MINISPDLOG_ACTIVE_LEVEL) { \
+            minispdlog::error(__VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_CRITICAL(...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_CRITICAL >= MINISPDLOG_ACTIVE_LEVEL) { \
+            minispdlog::critical(__VA_ARGS__); \
+        } \
+    } while(0)
+
 } 
