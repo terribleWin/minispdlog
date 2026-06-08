@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-20.04]
+        compiler: [g++, clang++]
+        build_type: [Release]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libfmt-dev libbenchmark-dev
+
+      - name: Configure
+        run: |
+          mkdir -p build && cd build
+          cmake .. \
+            -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Run tests
+        run: |
+          cd build/tests
+          for test in test_level test_sink test_logger test_thread_pool test_registry test_rotating_file; do
+            echo "=== Running $test ==="
+            ./$test && echo "  PASS" || (echo "  FAIL" && exit 1)
+          done
+
+      - name: Run benchmark
+        run: |
+          cd build/tests
+          ./benchmark_async --benchmark_min_time=0.1
