@@ -19,3 +19,21 @@ endif()
 add_subdirectory(third_party/fmt)
 add_subdirectory(src)
 add_subdirectory(tests)
+
+# ========== 安装规则 ==========
+
+# 安装头文件
+install(DIRECTORY include/ DESTINATION include
+        FILES_MATCHING PATTERN "*.h")
+
+# 安装 minispdlog 库（fmt 由用户自行管理）
+install(TARGETS minispdlog
+        EXPORT minispdlog-targets
+        ARCHIVE DESTINATION lib
+        LIBRARY DESTINATION lib)
+
+# 生成 CMake 配置文件供 find_package 使用
+install(EXPORT minispdlog-targets
+        FILE minispdlog-config.cmake
+        NAMESPACE minispdlog::
+        DESTINATION lib/cmake/minispdlog)

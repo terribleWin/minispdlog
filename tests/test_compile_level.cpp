@@ -7,7 +7,7 @@
 using namespace minispdlog;
 
 void test_macros_compile() {
-    std::cout << "\n========== 测试:编译期宏接口编译验证 ==========\n";
+    std::cout << "\n========== 测试1:编译期宏接口编译验证 ==========\n";
 
     // 设置默认 logger 让宏 API 能正常工作
     auto sink = std::make_shared<sinks::file_sink_mt>("logs/macro_test.log", true);
@@ -36,7 +36,7 @@ void test_macros_compile() {
 }
 
 void test_macro_with_logger_object() {
-    std::cout << "\n========== 测试:宏+运行期级别过滤 ==========\n";
+    std::cout << "\n========== 测试2:宏+运行期级别过滤 ==========\n";
 
     auto sink = std::make_shared<sinks::file_sink_mt>("logs/macro_filter.log", true);
     auto bench_logger = std::make_shared<logger>("filter_test", sink);
@@ -66,7 +66,7 @@ void test_macro_with_logger_object() {
 
 int main() {
     std::cout << "╔════════════════════════════════════════╗\n";
-    std::cout << "║  编译期日志级别控制测试               ║\n";
+    std::cout << "║  编译期日志级别控制测试                  ║\n";
     std::cout << "╚════════════════════════════════════════╝\n";
 
     system("mkdir -p logs");
