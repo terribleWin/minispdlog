@@ -39,7 +39,7 @@ jobs:
       - name: Run tests
         run: |
           cd build/tests
-          for test in test_level test_sink test_logger test_thread_pool test_registry test_rotating_file; do
+          for test in test_level test_sink test_logger test_thread_pool test_registry test_rotating_file test_compile_level; do
             echo "=== Running $test ==="
             ./$test && echo "  PASS" || (echo "  FAIL" && exit 1)
           done
