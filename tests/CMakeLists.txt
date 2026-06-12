@@ -37,6 +37,10 @@ target_link_libraries(test_compile_level PRIVATE minispdlog Threads::Threads)
 add_executable(test_spsc_queue test_spsc_queue.cpp)
 target_link_libraries(test_spsc_queue PRIVATE minispdlog Threads::Threads)
 
+# 队列对比 benchmark
+add_executable(benchmark_queue benchmark_queue.cpp)
+target_link_libraries(benchmark_queue PRIVATE minispdlog Threads::Threads benchmark)
+
 add_executable(benchmark_spdlog  benchmark_spdlog.cpp)
 target_include_directories(benchmark_spdlog PRIVATE ~/spdlog/include)
 target_link_libraries(benchmark_spdlog PRIVATE minispdlog Threads::Threads)
