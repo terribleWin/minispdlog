@@ -33,9 +33,9 @@ target_link_libraries(test_performance PRIVATE minispdlog Threads::Threads)
 add_executable(test_compile_level test_compile_level.cpp)
 target_link_libraries(test_compile_level PRIVATE minispdlog Threads::Threads)
 
-# 测试12:Qt Sink 测试
-add_executable(test_qt_sink test_qt_sink.cpp)
-target_link_libraries(test_qt_sink PRIVATE minispdlog Threads::Threads)
+# 测试13:SPSC 无锁队列测试
+add_executable(test_spsc_queue test_spsc_queue.cpp)
+target_link_libraries(test_spsc_queue PRIVATE minispdlog Threads::Threads)
 
 add_executable(benchmark_spdlog  benchmark_spdlog.cpp)
 target_include_directories(benchmark_spdlog PRIVATE ~/spdlog/include)

@@ -234,7 +234,7 @@ int main() {
     const int SINGLE_ITERATIONS = 500000;
     // const int MULTI_THREADS = 8;
     const int MULTI_THREADS = 16;
-    const int MULTI_MESSAGES = 62500;
+    const int MULTI_MESSAGES = 62500;  // 16线程 x 62500条 = 100万条
     
     std::cout << "测试配置：" << std::endl;
     std::cout << "  单线程测试：" << SINGLE_ITERATIONS << " 条消息" << std::endl;
