@@ -1,5 +1,6 @@
 #include "minispdlog/minispdlog.h"
 #include <iostream>
+#include <stdexcept>
 #include <thread>
 #include <chrono>
 
@@ -337,6 +338,26 @@ void test_flush_all() {
     drop_all();
 }
 
+void test_set_level_flush_after_drop_all() {
+    std::cout << "\n========== 测试14:drop_all 后 set_level/flush_all 不崩溃 ==========\n";
+
+    auto survivor = stdout_color_mt("survivor");
+    survivor->info("before drop_all");
+
+    // 直接清空 registry 内部状态（绕过 default_logger() 的自动重建）
+    registry::instance().drop_all();
+
+    if (registry::instance().default_logger()) {
+        throw std::runtime_error("expected default_logger to be null after drop_all");
+    }
+
+    // 方案 A：default 为空时跳过，不应解引用空指针
+    registry::instance().set_level(level::warn);
+    registry::instance().flush_all();
+
+    std::cout << " drop_all() 后 set_level/flush_all 安全返回\n";
+}
+
 int main() {
     std::cout << "╔════════════════════════════════════════╗\n";
     std::cout << "║ MiniSpdlog 第5天测试 - Registry系统     ║\n";
@@ -359,6 +380,7 @@ int main() {
         test_logger_lifetime();
         test_custom_default_pattern();
         test_flush_all();
+        test_set_level_flush_after_drop_all();
         
         std::cout << "\n 所有测试通过!\n\n";
     } catch (const std::exception& e) {
