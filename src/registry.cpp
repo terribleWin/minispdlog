@@ -55,8 +55,9 @@ namespace minispdlog{
 
     void registry::set_level(level log_level) {
         std::lock_guard<std::mutex> lock(mutex_);
-        default_logger_->set_level(log_level);
-       
+        if (default_logger_) {
+            default_logger_->set_level(log_level);
+        }
         for(auto& pair : loggers_){
             pair.second->set_level(log_level);
         }
@@ -64,7 +65,9 @@ namespace minispdlog{
 
     void registry::flush_all() {
         std::lock_guard<std::mutex> lock(mutex_);
-        default_logger_->flush();
+        if (default_logger_) {
+            default_logger_->flush();
+        }
         for(auto& pair : loggers_){
             pair.second->flush();
         }
