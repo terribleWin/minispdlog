@@ -82,6 +82,8 @@ public:
 
     bool empty() const { return size() == 0; }
 
+    size_t capacity() const { return capacity_; }
+
 private:
     size_t capacity_;
     std::vector<T> buffer_;

@@ -11,7 +11,7 @@ template<typename T>
 class spsc_queue {
 public:
     explicit spsc_queue(size_t capacity)
-        : capacity_(capacity)
+        : capacity_(next_pow2_(capacity))
         , buffer_(capacity_)
         , write_idx_(0)
         , read_idx_(0) {}
@@ -59,7 +59,17 @@ public:
 
     bool empty() const { return size() == 0; }
 
+    size_t capacity() const { return capacity_; }
+
 private:
+    static size_t next_pow2_(size_t n) {
+        size_t p = 1;
+        while (p < n) {
+            p <<= 1;
+        }
+        return p;
+    }
+
     size_t capacity_;
     std::vector<T> buffer_;
     std::atomic<size_t> write_idx_;

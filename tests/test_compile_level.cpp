@@ -1,7 +1,7 @@
 #include "minispdlog/minispdlog.h"
-#include <iostream>
 #include <cassert>
 #include <fstream>
+#include <iostream>
 #include <string>
 
 using namespace minispdlog;
@@ -26,9 +26,8 @@ void test_macros_compile() {
 
     // 验证文件不为空（宏确实产生了输出）
     std::ifstream file("logs/macro_test.log");
-    std::string content((std::istreambuf_iterator<char>(file)),
-                         std::istreambuf_iterator<char>());
-    
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
     assert(!content.empty());
     assert(content.find("TRACE") != std::string::npos);
     assert(content.find("CRITICAL") != std::string::npos);
@@ -59,7 +58,7 @@ void test_macro_with_logger_object() {
     while (std::getline(file, line)) {
         count++;
     }
-    
+
     assert(count == 3);
     std::cout << "  ✓ 运行期过滤正确: " << count << " 条日志 (应为3)\n";
 }

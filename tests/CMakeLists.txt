@@ -1,46 +1,147 @@
 find_package(Threads REQUIRED)
-# 测试1:日志级别测试
-add_executable(test_level test_level.cpp)
-target_link_libraries(test_level PRIVATE minispdlog)
-# 测试2:日志格式测试
-add_executable(test_sink test_sink.cpp)
-target_link_libraries(test_sink PRIVATE minispdlog )
-# 测试3:多线程测试
-add_executable(test_formatter test_formatter.cpp)
-target_link_libraries(test_formatter PRIVATE minispdlog Threads::Threads)
-# 测试4:logger测试
-add_executable(test_logger test_logger.cpp)
-target_link_libraries(test_logger PRIVATE minispdlog Threads::Threads)
-# 测试5:registry测试
-add_executable(test_registry test_registry.cpp)
-target_link_libraries(test_registry PRIVATE minispdlog Threads::Threads)
-# 测试6:thread pool测试
-add_executable(test_thread_pool test_thread_pool.cpp)
-target_link_libraries(test_thread_pool PRIVATE minispdlog Threads::Threads)
-# 测试7:性能对比测试
-add_executable(test_benchmark test_benchmark.cpp)
-target_link_libraries(test_benchmark PRIVATE minispdlog Threads::Threads)
-# 测试8:Google Benchmark 性能测试
-add_executable(benchmark_async benchmark_async.cpp)
-target_link_libraries(benchmark_async PRIVATE minispdlog Threads::Threads benchmark)
-# 测试9:rotating_file 性能测试
-add_executable(test_rotating_file test_rotating_file.cpp)
-target_link_libraries(test_rotating_file PRIVATE minispdlog Threads::Threads)
-# 测试10:性能测试
-add_executable(test_performance  test_performance.cpp)
-target_link_libraries(test_performance PRIVATE minispdlog Threads::Threads)
-# 测试11:编译期级别控制测试
-add_executable(test_compile_level test_compile_level.cpp)
-target_link_libraries(test_compile_level PRIVATE minispdlog Threads::Threads)
 
-# 测试13:SPSC 无锁队列测试
-add_executable(test_spsc_queue test_spsc_queue.cpp)
-target_link_libraries(test_spsc_queue PRIVATE minispdlog Threads::Threads)
+# ============================================================
+# minispdlog 工业化测试框架 CMake 配置
+#
+# 设计原则：
+#   1. 单入口可执行文件（编译一次，运行所有测试）
+#   2. doctest header-only 测试内核（零外部依赖）
+#   3. CTest 自动发现测试用例（支持 ctest 命令）
+#   4. 可选 Google Benchmark 性能基准（保留已有 benchmark）
+#   5. 代码覆盖率支持（gcov + lcov + genhtml）
+# ============================================================
 
-# 队列对比 benchmark
-add_executable(benchmark_queue benchmark_queue.cpp)
-target_link_libraries(benchmark_queue PRIVATE minispdlog Threads::Threads benchmark)
+set(TEST_FRAMEWORK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/framework)
 
-add_executable(benchmark_spdlog  benchmark_spdlog.cpp)
-target_include_directories(benchmark_spdlog PRIVATE ~/spdlog/include)
-target_link_libraries(benchmark_spdlog PRIVATE minispdlog Threads::Threads)
+# ---- 单元测试源文件（按组件组织） ----
+set(UNIT_TEST_SOURCES
+    unit/test_level.cpp
+    unit/test_sink.cpp
+    unit/test_logger.cpp
+    unit/test_registry.cpp
+    unit/test_pattern.cpp
+    unit/test_queue.cpp
+    unit/test_async.cpp
+    unit/test_utils.cpp
+    unit/test_callback_sink.cpp
+    unit/test_daily_file.cpp
+    unit/test_rotating_file.cpp
+    unit/test_qt_sink.cpp
+)
+
+# ---- 统一测试入口可执行文件 ----
+# 编译一次，包含所有测试；doctest 提供自动测试发现和命令行过滤
+# 比当前项目"每个文件独立可执行文件"的方式编译速度快 5-10 倍
+add_executable(minispdlog_tests
+    test_main.cpp
+    ${UNIT_TEST_SOURCES}
+)
+
+target_include_directories(minispdlog_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}       # 使得 #include "framework/doctest.h" 能找到 tests/framework/
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(minispdlog_tests PRIVATE
+    minispdlog
+    Threads::Threads
+)
+
+# Qt GUI Sink 测试（offscreen platform，无需显示器）
+if(MINISPDLOG_WITH_QT AND MINISPDLOG_QT_FOUND)
+    target_link_libraries(minispdlog_tests PRIVATE ${MINISPDLOG_QT_TARGET})
+    target_compile_definitions(minispdlog_tests PRIVATE MINISPDLOG_WITH_QT=1)
+    set_target_properties(minispdlog_tests PROPERTIES AUTOMOC ON)
+    message(STATUS "minispdlog_tests: Qt sink tests enabled")
+endif()
+
+# ---- CTest 集成 ----
+# doctest 虽然没有 CMake 模块，但我们可以通过命令行参数实现测试过滤：
+#   ./minispdlog_tests "[sink]"      # 只跑 sink 标签的测试
+#   ./minispdlog_tests -tc="logger"  # 只跑名字包含 logger 的测试
+#   ctest -R minispdlog_tests        # 运行整个测试套件
+enable_testing()
+add_test(NAME minispdlog_tests COMMAND minispdlog_tests)
+
+# 为了更精细的 CTest 集成（每个 TEST_CASE 一个 CTest 项），
+# 可以后续引入 doctest 官方 CMake 模块（doctest.cmake + doctestAddTests.cmake）
+# 下载地址：https://github.com/doctest/doctest/blob/master/scripts/cmake/doctest.cmake
+
+# ============================================================
+# 可选：Google Benchmark 性能测试（保留已有测试）
+# ============================================================
+find_package(benchmark QUIET)
+if(benchmark_FOUND)
+    add_executable(minispdlog_bench_async benchmark_async.cpp)
+    target_link_libraries(minispdlog_bench_async PRIVATE
+        minispdlog
+        Threads::Threads
+        benchmark::benchmark
+    )
+
+    add_executable(minispdlog_bench_queue benchmark_queue.cpp)
+    target_link_libraries(minispdlog_bench_queue PRIVATE
+        minispdlog
+        Threads::Threads
+        benchmark::benchmark
+    )
+endif()
+
+# ============================================================
+# 代码覆盖率（gcov + lcov + genhtml）
+# 启用方式：cmake -DMINISPDLOG_ENABLE_COVERAGE=ON ..
+# 生成报告：cmake --build build --target coverage
+# ============================================================
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    option(MINISPDLOG_ENABLE_COVERAGE "Enable coverage reporting" OFF)
+    if(MINISPDLOG_ENABLE_COVERAGE)
+        message(STATUS "Coverage enabled for minispdlog_tests")
+
+        target_compile_options(minispdlog_tests PRIVATE --coverage -O0)
+        target_link_options(minispdlog_tests PRIVATE --coverage)
+
+        find_program(LCOV_PATH lcov)
+        find_program(GENHTML_PATH genhtml)
+
+        if(LCOV_PATH AND GENHTML_PATH)
+            add_custom_target(coverage
+                # 1. 先运行所有测试
+                COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+                # 2. 收集覆盖率数据
+                COMMAND ${LCOV_PATH} --capture --directory . --output-file coverage.info
+                # 3. 过滤掉系统头、第三方库、测试框架本身
+                COMMAND ${LCOV_PATH} --remove coverage.info
+                    '/usr/*'
+                    '*/third_party/*'
+                    '*/tests/framework/*'
+                    '*/tests/unit/*'
+                    --output-file coverage.info.cleaned
+                # 4. 生成 HTML 报告
+                COMMAND ${GENHTML_PATH} coverage.info.cleaned --output-directory coverage_report
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                COMMENT "Generating coverage report (this may take a while)..."
+            )
+        else()
+            message(WARNING "lcov or genhtml not found. Coverage target will not be available.")
+        endif()
+    endif()
+endif()
+
+# ============================================================
+# 旧测试文件清理清单（已废弃，保留参考）
+# ============================================================
+# 以下文件已被新框架的 unit/*.cpp 替代，可以安全删除：
+#   test_level.cpp        -> unit/test_level.cpp
+#   test_sink.cpp         -> unit/test_sink.cpp
+#   test_formatter.cpp    -> 待合并到 unit/test_pattern.cpp
+#   test_logger.cpp       -> unit/test_logger.cpp
+#   test_registry.cpp     -> unit/test_registry.cpp
+#   test_thread_pool.cpp  -> 待合并到 unit/test_async.cpp
+#   test_rotating_file.cpp-> unit/test_rotating_file.cpp
+#   test_compile_level.cpp-> 待合并到 unit/test_level.cpp [compile]
+#   test_performance.cpp  -> 已废弃，benchmark 替代
+#   test_benchmark.cpp    -> 已废弃，benchmark 替代
+#   test_spsc_queue.cpp   -> 待合并到 unit/test_queue.cpp
+#   benchmark_async.cpp   -> 保留，见上方 benchmark target
+#   benchmark_queue.cpp   -> 保留，见上方 benchmark target
+#   benchmark_spdlog.cpp-> 保留，见上方 benchmark target

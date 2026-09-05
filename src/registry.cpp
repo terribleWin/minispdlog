@@ -1,6 +1,8 @@
 #include "minispdlog/registry.h"
+#include "minispdlog/async.h"
 #include "minispdlog/sinks/color_console_sink.h"
 #include <stdexcept>
+#include <vector>
 namespace minispdlog{
     registry::registry() {
         auto console_sink = std::make_shared<sinks::color_console_sink_mt>();
@@ -64,12 +66,21 @@ namespace minispdlog{
     }
 
     void registry::flush_all() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (default_logger_) {
-            default_logger_->flush();
+        std::vector<std::shared_ptr<logger>> snapshot;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (default_logger_) {
+                snapshot.push_back(default_logger_);
+            }
+            snapshot.reserve(snapshot.size() + loggers_.size());
+            for (auto& pair : loggers_) {
+                snapshot.push_back(pair.second);
+            }
         }
-        for(auto& pair : loggers_){
-            pair.second->flush();
+        for (auto& lg : snapshot) {
+            if (lg) {
+                lg->flush();
+            }
         }
     }
 
@@ -77,5 +88,11 @@ namespace minispdlog{
         if(loggers_.find(logger_name) != loggers_.end()){
             throw std::runtime_error("Logger with name '" + logger_name + "' already exists.");
         }
+    }
+
+    void shutdown() {
+        registry::instance().flush_all();
+        thread_pool_manager::instance().shutdown();
+        registry::instance().drop_all();
     }
 }

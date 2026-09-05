@@ -1,9 +1,9 @@
 #include "minispdlog/details/spsc_queue.h"
-#include <iostream>
-#include <thread>
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <iostream>
+#include <thread>
 #include <vector>
 
 using namespace minispdlog::details;
@@ -33,11 +33,11 @@ void test_full() {
 
     assert(q.push(1));
     assert(q.push(2));
-    assert(!q.push(3));  // 容量 2，已满
+    assert(!q.push(3)); // 容量 2，已满
 
     int val;
     assert(q.pop(val) && val == 1);
-    assert(q.push(3));   // 腾出空位后可以再入
+    assert(q.push(3)); // 腾出空位后可以再入
     std::cout << "  PASS\n";
 }
 
@@ -82,7 +82,8 @@ void test_perf() {
 
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < N; ++i) {
-        while (!q.push(i)) {}
+        while (!q.push(i)) {
+        }
     }
     auto end = std::chrono::high_resolution_clock::now();
     auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();

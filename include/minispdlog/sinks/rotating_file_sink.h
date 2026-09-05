@@ -31,7 +31,7 @@ public:
         size_t max_files
     );
     
-    ~rotating_file_sink() override = default;
+    ~rotating_file_sink() override;
     
     // 获取当前文件名
     std::string filename() const;

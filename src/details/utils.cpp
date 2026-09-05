@@ -4,6 +4,10 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace minispdlog {
 namespace details {
@@ -12,7 +16,6 @@ std::string format_time(const log_clock::time_point& tp, const char* format) {
     auto time_t_val = log_clock::to_time_t(tp);
     std::tm tm_val;
     
-    // 线程安全的时间转换
 #ifdef _WIN32
     localtime_s(&tm_val, &time_t_val);
 #else
@@ -38,6 +41,14 @@ size_t get_thread_id() {
 #else
     std::hash<std::thread::id> hasher;
     return hasher(std::this_thread::get_id());
+#endif
+}
+
+size_t get_pid() {
+#ifdef _WIN32
+    return static_cast<size_t>(::GetCurrentProcessId());
+#else
+    return static_cast<size_t>(::getpid());
 #endif
 }
 

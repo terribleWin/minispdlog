@@ -4,11 +4,15 @@
 #include "logger.h"
 #include "registry.h"
 #include "level.h"
-#include "logger.h"
 #include "sinks/console_sink.h"
 #include "sinks/color_console_sink.h"
-#include "sinks/file_sink.h"   
+#include "sinks/file_sink.h"
 #include "sinks/rotating_file_sink.h"
+#include "sinks/daily_file_sink.h"
+#include "sinks/callback_sink.h"
+#ifdef MINISPDLOG_WITH_QT
+#include "sinks/qt_sink.h"
+#endif
 #include <fmt/format.h>
 #include <memory>
 #include <string>
@@ -56,6 +60,10 @@ namespace minispdlog{
     inline void flush_all() {
         registry::instance().flush_all();
     }
+
+    // Drain async queues, join the global thread pool, drop registered loggers.
+    // Call before main() returns if you used async logging.
+    MINISPDLOG_API void shutdown();
 
     //快速创建并注册 logger
     //创建一个多线程安全的控制台 logger
@@ -113,82 +121,153 @@ namespace minispdlog{
     register_logger(new_logger);
     return new_logger;
 }
+    // 按天切分文件 logger（默认 00:00 翻日，max_files=0 表示不删旧文件）
+    inline std::shared_ptr<logger> daily_logger_mt(
+    const std::string& logger_name,
+    const std::string& filename,
+    int rotation_hour = 0,
+    int rotation_minute = 0,
+    bool truncate = false,
+    size_t max_files = 0
+) {
+    auto sink = std::make_shared<sinks::daily_file_sink_mt>(
+        filename, rotation_hour, rotation_minute, truncate, max_files);
+    auto new_logger = std::make_shared<logger>(logger_name, sink);
+    register_logger(new_logger);
+    return new_logger;
+}
+    inline std::shared_ptr<logger> daily_logger_st(
+    const std::string& logger_name,
+    const std::string& filename,
+    int rotation_hour = 0,
+    int rotation_minute = 0,
+    bool truncate = false,
+    size_t max_files = 0
+) {
+    auto sink = std::make_shared<sinks::daily_file_sink_st>(
+        filename, rotation_hour, rotation_minute, truncate, max_files);
+    auto new_logger = std::make_shared<logger>(logger_name, sink);
+    register_logger(new_logger);
+    return new_logger;
+}
 
-    //全局日志接口
+    //全局日志接口（sourced_fmt 在调用点捕获源码位置，再交给 logger::log）
     template<typename... Args>
-    inline void trace(fmt::format_string<Args...> fmt, Args&&... args) {
-        default_logger()->trace(fmt, std::forward<Args>(args)...);
+    inline void trace(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
+        default_logger()->log(level::trace, fmt.loc, fmt.value, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void debug(fmt::format_string<Args...> fmt, Args&&... args) {
-        default_logger()->debug(fmt, std::forward<Args>(args)...);
+    inline void debug(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
+        default_logger()->log(level::debug, fmt.loc, fmt.value, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void info(fmt::format_string<Args...> fmt, Args&&... args) {
-        default_logger()->info(fmt, std::forward<Args>(args)...);
+    inline void info(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
+        default_logger()->log(level::info, fmt.loc, fmt.value, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void warn(fmt::format_string<Args...> fmt, Args&&... args) {
-        default_logger()->warn(fmt, std::forward<Args>(args)...);
+    inline void warn(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
+        default_logger()->log(level::warn, fmt.loc, fmt.value, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void error(fmt::format_string<Args...> fmt, Args&&... args) {
-        default_logger()->error(fmt, std::forward<Args>(args)...);
+    inline void error(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
+        default_logger()->log(level::error, fmt.loc, fmt.value, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void critical(fmt::format_string<Args...> fmt, Args&&... args) {
-        default_logger()->critical(fmt, std::forward<Args>(args)...);
+    inline void critical(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
+        default_logger()->log(level::critical, fmt.loc, fmt.value, std::forward<Args>(args)...);
     }
 
-// ========== 编译期日志宏（Release 下零开销） ==========
-// 与普通 API 的区别：当级别低于 MINISPDLOG_ACTIVE_LEVEL 时，
-// 整段代码在编译期被移除，不进二进制。
+// ========== 编译期日志宏（Release 下零开销，并在调用点填充源码位置） ==========
+#define MINISPDLOG_LOGGER_CALL(logger, lvl, ...) \
+    (logger)->log((lvl), MINISPDLOG_LOC, __VA_ARGS__)
 
 #define MINISPDLOG_TRACE(...) \
     do { \
         if constexpr (MINISPDLOG_LEVEL_TRACE >= MINISPDLOG_ACTIVE_LEVEL) { \
-            minispdlog::trace(__VA_ARGS__); \
+            MINISPDLOG_LOGGER_CALL(minispdlog::default_logger(), minispdlog::level::trace, __VA_ARGS__); \
         } \
     } while(0)
 
 #define MINISPDLOG_DEBUG(...) \
     do { \
         if constexpr (MINISPDLOG_LEVEL_DEBUG >= MINISPDLOG_ACTIVE_LEVEL) { \
-            minispdlog::debug(__VA_ARGS__); \
+            MINISPDLOG_LOGGER_CALL(minispdlog::default_logger(), minispdlog::level::debug, __VA_ARGS__); \
         } \
     } while(0)
 
 #define MINISPDLOG_INFO(...) \
     do { \
         if constexpr (MINISPDLOG_LEVEL_INFO >= MINISPDLOG_ACTIVE_LEVEL) { \
-            minispdlog::info(__VA_ARGS__); \
+            MINISPDLOG_LOGGER_CALL(minispdlog::default_logger(), minispdlog::level::info, __VA_ARGS__); \
         } \
     } while(0)
 
 #define MINISPDLOG_WARN(...) \
     do { \
         if constexpr (MINISPDLOG_LEVEL_WARN >= MINISPDLOG_ACTIVE_LEVEL) { \
-            minispdlog::warn(__VA_ARGS__); \
+            MINISPDLOG_LOGGER_CALL(minispdlog::default_logger(), minispdlog::level::warn, __VA_ARGS__); \
         } \
     } while(0)
 
 #define MINISPDLOG_ERROR(...) \
     do { \
         if constexpr (MINISPDLOG_LEVEL_ERROR >= MINISPDLOG_ACTIVE_LEVEL) { \
-            minispdlog::error(__VA_ARGS__); \
+            MINISPDLOG_LOGGER_CALL(minispdlog::default_logger(), minispdlog::level::error, __VA_ARGS__); \
         } \
     } while(0)
 
 #define MINISPDLOG_CRITICAL(...) \
     do { \
         if constexpr (MINISPDLOG_LEVEL_CRITICAL >= MINISPDLOG_ACTIVE_LEVEL) { \
-            minispdlog::critical(__VA_ARGS__); \
+            MINISPDLOG_LOGGER_CALL(minispdlog::default_logger(), minispdlog::level::critical, __VA_ARGS__); \
         } \
     } while(0)
 
-} 
+#define MINISPDLOG_LOGGER_TRACE(logger, ...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_TRACE >= MINISPDLOG_ACTIVE_LEVEL) { \
+            MINISPDLOG_LOGGER_CALL(logger, minispdlog::level::trace, __VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_LOGGER_DEBUG(logger, ...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_DEBUG >= MINISPDLOG_ACTIVE_LEVEL) { \
+            MINISPDLOG_LOGGER_CALL(logger, minispdlog::level::debug, __VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_LOGGER_INFO(logger, ...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_INFO >= MINISPDLOG_ACTIVE_LEVEL) { \
+            MINISPDLOG_LOGGER_CALL(logger, minispdlog::level::info, __VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_LOGGER_WARN(logger, ...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_WARN >= MINISPDLOG_ACTIVE_LEVEL) { \
+            MINISPDLOG_LOGGER_CALL(logger, minispdlog::level::warn, __VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_LOGGER_ERROR(logger, ...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_ERROR >= MINISPDLOG_ACTIVE_LEVEL) { \
+            MINISPDLOG_LOGGER_CALL(logger, minispdlog::level::error, __VA_ARGS__); \
+        } \
+    } while(0)
+
+#define MINISPDLOG_LOGGER_CRITICAL(logger, ...) \
+    do { \
+        if constexpr (MINISPDLOG_LEVEL_CRITICAL >= MINISPDLOG_ACTIVE_LEVEL) { \
+            MINISPDLOG_LOGGER_CALL(logger, minispdlog::level::critical, __VA_ARGS__); \
+        } \
+    } while(0)
+
+}

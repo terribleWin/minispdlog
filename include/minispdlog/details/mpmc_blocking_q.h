@@ -32,6 +32,17 @@ namespace minispdlog{
                 q_.push_back(std::move(item));
                 push_cv_.notify_one();
             }
+
+            [[nodiscard]] bool try_enqueue(T&& item) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (q_.full()) {
+                    return false;
+                }
+                q_.push_back(std::move(item));
+                push_cv_.notify_one();
+                return true;
+            }
+
             bool dequeue_for(T& poped_item, std::chrono::milliseconds wiat_duration) {
                 std::unique_lock<std::mutex> lock(mutex_);
                 if (!push_cv_.wait_for(lock, wiat_duration, [this] { return !q_.empty(); })) {

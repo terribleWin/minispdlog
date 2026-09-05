@@ -40,6 +40,14 @@ rotating_file_sink<Mutex>::rotating_file_sink(
 }
 
 template<typename Mutex>
+rotating_file_sink<Mutex>::~rotating_file_sink() {
+    if (file_) {
+        fclose(file_);
+        file_ = nullptr;
+    }
+}
+
+template<typename Mutex>
 std::string rotating_file_sink<Mutex>::filename() const {
     return calc_filename(base_filename_, 0);
 }

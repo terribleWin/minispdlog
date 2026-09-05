@@ -7,44 +7,129 @@ on:
     branches: [main, master]
 
 jobs:
-  build:
+  # ============================================================
+  # 使用仓库根目录 .clang-format / .clang-tidy
+  # ============================================================
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install clang-format and clang-tidy
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-tidy python3-pip
+          # Pin to the same clang-format the Windows/dev tree uses (pip 23.1.0).
+          python3 -m pip install --user 'clang-format==23.1.0'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: clang-format (repo .clang-format)
+        run: bash scripts/lint.sh format
+
+      - name: Configure compile_commands.json
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_BUILD_TYPE=Debug
+
+      - name: clang-tidy (repo .clang-tidy)
+        run: bash scripts/lint.sh tidy
+
+  # ============================================================
+  # 主测试矩阵：多编译器 + 多构建变体
+  # ============================================================
+  test:
     strategy:
+      fail-fast: false  # 一个矩阵项失败不终止其他项
       matrix:
-        os: [ubuntu-20.04]
+        os: [ubuntu-22.04]
         compiler: [g++, clang++]
-        build_type: [Release]
+        build_type: [Release, RelASan, RelTSan]
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libfmt-dev libbenchmark-dev
+          sudo apt-get install -y -qq libfmt-dev libbenchmark-dev lcov
 
       - name: Configure
         run: |
-          mkdir -p build && cd build
-          cmake .. \
+          cmake -S . -B build \
             -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
 
       - name: Build
-        run: cmake --build build -j$(nproc)
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Run tests (ctest)
+        run: ctest --test-dir build --output-on-failure --parallel $(nproc)
+
+      - name: Run benchmarks (Release only)
+        if: matrix.build_type == 'Release'
+        run: |
+          cd build/tests
+          if [ -f ./minispdlog_bench_async ]; then
+            ./minispdlog_bench_async --benchmark_min_time=0.1
+          fi
+
+  # ============================================================
+  # 代码覆盖率（gcc + lcov）
+  # ============================================================
+  coverage:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libfmt-dev lcov
+
+      - name: Configure with Coverage
+        run: |
+          cmake -S . -B build \
+            -DMINISPDLOG_ENABLE_COVERAGE=ON \
+            -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Generate coverage report
+        run: cmake --build build --target coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: build/coverage.info.cleaned
+          fail_ci_if_error: false
+
+  # ============================================================
+  # Windows 构建验证（MSVC）
+  # ============================================================
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
 
       - name: Run tests
-        run: |
-          cd build/tests
-          for test in test_level test_sink test_logger test_thread_pool test_registry test_rotating_file test_compile_level; do
-            echo "=== Running $test ==="
-            ./$test && echo "  PASS" || (echo "  FAIL" && exit 1)
-          done
-
-      - name: Run benchmark
-        run: |
-          cd build/tests
-          ./benchmark_async --benchmark_min_time=0.1
+        run: ctest --test-dir build --build-config Release --output-on-failure

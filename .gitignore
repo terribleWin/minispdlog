@@ -1,2 +1,16 @@
 build/
 .github/*.md
+
+# aqtinstall 下载的 Qt SDK（体积大，用 scripts/setup_qt.sh 安装）
+third_party/qt/**
+!third_party/qt/README.md
+
+# JVM crash dumps from accidental Java/hs_err runs
+hs_err_pid*.log
+replay_pid*.log
+
+# generated test output
+logs/
+
+# fmt Android gradle cache
+third_party/fmt/support/.gradle/

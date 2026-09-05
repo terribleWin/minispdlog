@@ -8,6 +8,7 @@ set(MINISPDLOG_SOURCES
     registry.cpp
     formatter.cpp
     rotating_file_sink.cpp
+    daily_file_sink.cpp
 )
 
 # 创建静态库

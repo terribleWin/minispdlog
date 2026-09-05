@@ -1,5 +1,6 @@
 #pragma once
 #include <fstream>
+#include <stdexcept>
 #include "base_sink.h"
 #include <iostream>
 #include <mutex>

@@ -1,0 +1,63 @@
+# ============================================================
+# clang-format 配置
+# 基于 LLVM 风格，适合 C++17/20 项目
+# ============================================================
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+
+# 缩进
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# 行宽
+ColumnLimit: 120
+
+# 大括号风格
+BreakBeforeBraces: Attach
+
+# 函数和类
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# 命名空间
+NamespaceIndentation: Inner
+FixNamespaceComments: true
+
+# 模板
+AlwaysBreakTemplateDeclarations: Yes
+
+# 指针和引用
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+
+# 排序
+SortIncludes: CaseSensitive
+SortUsingDeclarations: true
+
+# 注释
+ReflowComments: false
+
+# 其他
+Cpp11BracedListStyle: true
+SpaceBeforeCpp11BracedList: false
+DerivePointerAlignment: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+
+# 访问修饰符缩进
+AccessModifierOffset: -4
+
+# 构造函数初始化列表
+ConstructorInitializerIndentWidth: 4
+BreakConstructorInitializers: BeforeColon
+
+# 连续声明对齐
+AlignConsecutiveDeclarations: false
+AlignConsecutiveAssignments: false
+
+# 宏对齐
+AlignTrailingComments: true

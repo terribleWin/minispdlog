@@ -18,7 +18,10 @@ class sink {
         virtual level get_level() const = 0;
         
         virtual bool should_log(level msg_level) const = 0;
-        virtual void set_formatter(std::unique_ptr<formatter> sink_formatter) =  0;
+        // Replace the sink formatter with a pattern_formatter compiled from `pattern`.
+        virtual void set_pattern(std::string pattern) = 0;
+        // Install any formatter (must implement clone). Null is ignored.
+        virtual void set_formatter(std::unique_ptr<formatter> sink_formatter) = 0;
 };
 using sink_ptr = std::shared_ptr<sink>;
 template<typename Mutex>
@@ -47,7 +50,15 @@ class base_sink : public sink {
             std::lock_guard<Mutex> lock(mutex_);
             flush_();
         }
+        void set_pattern(std::string pattern) override {
+            auto compiled = std::make_unique<pattern_formatter>(std::move(pattern));
+            std::lock_guard<Mutex> lock(mutex_);
+            formatter_ = std::move(compiled);
+        }
         void set_formatter(std::unique_ptr<formatter> sink_formatter) override {
+            if (!sink_formatter) {
+                return;
+            }
             std::lock_guard<Mutex> lock(mutex_);
             formatter_ = std::move(sink_formatter);
         }

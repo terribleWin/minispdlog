@@ -10,16 +10,21 @@
 
 namespace minispdlog {
 /**
- * @brief 基于 pattern 字符串的日志格式化器
- * 
- * 继承自 formatter 抽象接口，将 pattern 字符串编译为 flag_formatter 序列，
- * 格式化时逐个调用，支持时间缓存优化。
- * 
- * @see formatter, flag_formatter
+ * Pattern string formatter.
+ *
+ * Separator convention (same scene, same delimiter):
+ *   date   %Y-%m-%d
+ *   time   %H:%M:%S.%e   (use %f instead of %e when you need microseconds)
+ *   source %s:%#  or %@
+ *   fields [..] [..] separated by a space
+ *   color  %^ ... %$  (marks log_msg::color_range_* for color sinks)
  */
     class pattern_formatter : public formatter {
         public:
-            explicit pattern_formatter(std::string pattern = "[%Y-%m-%d %H:%M:%S] [%l] %v");
+            static constexpr const char* default_pattern =
+                "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] %v";
+
+            explicit pattern_formatter(std::string pattern = default_pattern);
             ~pattern_formatter() override = default;
             void format(const details::log_msg& msg, fmt::memory_buffer& dest) override;
             std::unique_ptr<formatter> clone() const override;

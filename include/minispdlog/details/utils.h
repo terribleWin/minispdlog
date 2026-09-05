@@ -14,6 +14,7 @@ MINISPDLOG_API std::string format_time(
     const char* format = "%Y-%m-%d %H:%M:%S"
 );
 MINISPDLOG_API size_t get_thread_id();
+MINISPDLOG_API size_t get_pid();
 MINISPDLOG_API int64_t get_timestamp_ms();
 MINISPDLOG_API std::string& ltrim(std::string& s);
 MINISPDLOG_API std::string& rtrim(std::string& s);
