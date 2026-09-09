@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>  // size_t
+#include <utility>
 #include <vector>   // std::vector
 namespace minispdlog{
     namespace details {
@@ -21,11 +22,11 @@ namespace minispdlog{
                 //队尾添加元素
                 void push_back(T&& item) {
                     v_[tail_] = std::move(item);
-                    tail_ = (tail_ + 1) % max_items_;
+                    tail_ = next_index_(tail_);
 
                     // 如果队列满了,覆盖最旧的元素
                     if (tail_ == head_) {
-                        head_ = (head_ + 1) % max_items_;
+                        head_ = next_index_(head_);
                         ++overrun_counter_;
                     }
                 }
@@ -39,15 +40,15 @@ namespace minispdlog{
                 }
                 //弹出队头元素
                 void pop_front() {
-                    head_ = (head_ + 1) % max_items_;// 移动头部指针
+                    head_ = next_index_(head_);
                 }
                 //检查队列是否为空                
                 bool empty() const {
                     return head_ == tail_;
                 }
-                //检查队列是否已满
+                //检查队列是否已满                
                 bool full() const {
-                    return (tail_ + 1) % max_items_ == head_;
+                    return next_index_(tail_) == head_;
                 }
                 //当前元素数量
                 size_t size() const {
@@ -65,7 +66,12 @@ namespace minispdlog{
                 size_t overrun_count() const {
                     return overrun_counter_;
                 }
-            private:                
+            private:
+                [[nodiscard]] size_t next_index_(size_t i) const noexcept {
+                    ++i;
+                    return i == max_items_ ? 0 : i;
+                }
+
                 size_t max_items_;
                 std::vector<T> v_;
                 size_t head_;

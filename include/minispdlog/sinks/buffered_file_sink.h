@@ -40,15 +40,14 @@ public:
     }
 
     void log(const details::log_msg& msg) override {
-        fmt::memory_buffer formatted;
         if constexpr (std::is_same_v<Mutex, std::mutex>) {
             std::unique_lock<std::mutex> lock(this->mutex_);
-            this->format_message(msg, formatted);
+            auto& formatted = this->format_message(msg);
             writer_.append(formatted.data(), formatted.size());
             drain_commits_(lock);
         } else {
             std::lock_guard<Mutex> lock(this->mutex_);
-            this->format_message(msg, formatted);
+            auto& formatted = this->format_message(msg);
             writer_.append(formatted.data(), formatted.size());
             writer_.commit_if_needed();
         }

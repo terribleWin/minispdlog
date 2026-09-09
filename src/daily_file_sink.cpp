@@ -94,8 +94,7 @@ namespace sinks {
             delete_old_(date);
         }
 
-        fmt::memory_buffer formatted;
-        this->format_message(msg, formatted);
+        auto& formatted = this->format_message(msg);
         if (file_) {
             std::fwrite(formatted.data(), 1, formatted.size(), file_.get());
         }

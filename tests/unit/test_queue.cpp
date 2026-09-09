@@ -83,6 +83,23 @@ TEST_CASE("circular_q multiple overwrites [queue][circular]") {
     REQUIRE(q.overrun_count() == 3);
 }
 
+TEST_CASE("circular_q wraps indices without dropping items [queue][circular]") {
+    circular_q<int> q(5);
+    for (int round = 0; round < 3; ++round) {
+        for (int i = 0; i < 5; ++i) {
+            q.push_back(round * 10 + i);
+        }
+        REQUIRE(q.full());
+        REQUIRE(q.size() == 5);
+        REQUIRE(q.front() == round * 10);
+        for (int i = 0; i < 5; ++i) {
+            REQUIRE(q.front() == round * 10 + i);
+            q.pop_front();
+        }
+        REQUIRE(q.empty());
+    }
+}
+
 // ---------- mpmc_blocking_queue ----------
 
 TEST_CASE("mpmc_blocking_queue basic enqueue dequeue [queue][mpmc]") {

@@ -75,13 +75,11 @@ private:
     void notify_consumer_() noexcept;
     void on_log_completed_() noexcept;
     void wait_for_pending_logs_() noexcept;
-    [[nodiscard]] static std::uint64_t now_ns_() noexcept;
 
     async_queue_type queue_type_;
     std::size_t worker_count_{1};
     std::size_t wake_batch_{64};
     std::chrono::microseconds wake_interval_{100};
-    std::uint64_t wake_interval_ns_{100000};
 
     std::unique_ptr<mpmc_blocking_queue<item_type>> blocking_q_;
     std::unique_ptr<mpsc_queue<item_type>> lockfree_q_;
@@ -91,7 +89,6 @@ private:
     std::atomic<std::uint64_t> park_seq_{0};
     std::atomic<std::size_t> idle_workers_{0};
     std::atomic<std::size_t> unnotified_{0};
-    std::atomic<std::uint64_t> batch_start_ns_{0};
 
     std::atomic<bool> shutting_down_{false};
     std::atomic<std::size_t> discard_count_{0};

@@ -21,8 +21,7 @@ public:
 
 protected:
     void sink_it_(const details::log_msg& msg) override {
-        fmt::memory_buffer formatted;
-        this->format_message(msg, formatted);
+        auto& formatted = this->format_message(msg);
         bytes_.fetch_add(formatted.size(), std::memory_order_relaxed);
     }
 

@@ -34,22 +34,29 @@ int64_t get_timestamp_ms() {
 }
 
 size_t get_thread_id() {
+    thread_local const size_t tid = []() {
 #ifdef _WIN32
-    return static_cast<size_t>(::GetCurrentThreadId());
+        return static_cast<size_t>(::GetCurrentThreadId());
 #elif defined(__linux__) || defined(__APPLE__)
-    return static_cast<size_t>(pthread_self());
+        return static_cast<size_t>(pthread_self());
 #else
-    std::hash<std::thread::id> hasher;
-    return hasher(std::this_thread::get_id());
+        return std::hash<std::thread::id>{}(std::this_thread::get_id());
 #endif
+    }();
+    return tid;
 }
 
 size_t get_pid() {
+    // Cached for the process. After fork(), reopen loggers or the child
+    // will keep reporting the parent's pid until exec.
+    static const size_t pid = []() {
 #ifdef _WIN32
-    return static_cast<size_t>(::GetCurrentProcessId());
+        return static_cast<size_t>(::GetCurrentProcessId());
 #else
-    return static_cast<size_t>(::getpid());
+        return static_cast<size_t>(::getpid());
 #endif
+    }();
+    return pid;
 }
 
 std::string& ltrim(std::string& s) {

@@ -80,7 +80,7 @@ void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& 
                 details::append_padded6(dest, details::micros_of_second(msg.time));
                 break;
             case piece_kind::level_short:
-                append_str(dest, level_to_short_string(msg.lvl));
+                dest.push_back(*level_to_short_string(msg.lvl));
                 break;
             case piece_kind::level_full:
                 append_str(dest, level_to_string(msg.lvl));

@@ -33,10 +33,8 @@ thread_pool::thread_pool(const thread_pool_options& opts)
     if (opts.wake_interval_us == 0) {
         wake_batch_ = 1;
         wake_interval_ = std::chrono::microseconds(1);
-        wake_interval_ns_ = 0;
     } else {
         wake_interval_ = std::chrono::microseconds(opts.wake_interval_us);
-        wake_interval_ns_ = static_cast<std::uint64_t>(opts.wake_interval_us) * 1000ull;
     }
 
     if (queue_type_ == async_queue_type::lockfree) {
@@ -88,13 +86,6 @@ thread_pool::~thread_pool() {
     }
 }
 
-std::uint64_t thread_pool::now_ns_() noexcept {
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count());
-}
-
 void thread_pool::notify_consumer_() noexcept {
     park_seq_.fetch_add(1, std::memory_order_release);
     if (lockfree_q_) {
@@ -123,32 +114,21 @@ void thread_pool::force_wake_all_() noexcept {
 
 void thread_pool::maybe_wake_log_() noexcept {
     const auto n = unnotified_.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (n == 1) {
-        batch_start_ns_.store(now_ns_(), std::memory_order_relaxed);
-    }
-
-    const auto idle = idle_workers_.load(std::memory_order_relaxed);
-    if (idle >= worker_count_ || n >= wake_batch_) {
-        unnotified_.store(0, std::memory_order_relaxed);
-        notify_consumer_();
-        return;
-    }
-    if (wake_interval_ns_ == 0) {
-        unnotified_.store(0, std::memory_order_relaxed);
-        notify_consumer_();
-        return;
-    }
-
-    const auto start = batch_start_ns_.load(std::memory_order_relaxed);
-    if (now_ns_() - start >= wake_interval_ns_) {
+    // Parked workers already time out at wake_interval_; only notify when
+    // someone is idle or the batch is full. Avoids a clock read per record.
+    if (idle_workers_.load(std::memory_order_relaxed) != 0 || n >= wake_batch_) {
         unnotified_.store(0, std::memory_order_relaxed);
         notify_consumer_();
     }
 }
 
 void thread_pool::on_log_completed_() noexcept {
-    pending_logs_.fetch_sub(1, std::memory_order_release);
-    pending_logs_.notify_all();
+    // wait() blocks until the value changes *and* a notify arrives. Waiters
+    // only care about zero, so skip the syscall until the last in-flight log.
+    const auto prev = pending_logs_.fetch_sub(1, std::memory_order_release);
+    if (prev == 1) {
+        pending_logs_.notify_all();
+    }
 }
 
 void thread_pool::wait_for_pending_logs_() noexcept {
@@ -168,8 +148,10 @@ bool thread_pool::enqueue_blocking_(async_msg&& msg, async_overflow_policy polic
             blocking_q_->enqueue_nowait(std::move(msg), notify);
             const auto dropped = blocking_q_->overrun_count() - before;
             if (dropped > 0) {
-                pending_logs_.fetch_sub(dropped, std::memory_order_release);
-                pending_logs_.notify_all();
+                const auto prev = pending_logs_.fetch_sub(dropped, std::memory_order_release);
+                if (prev <= dropped) {
+                    pending_logs_.notify_all();
+                }
             }
             return true;
         }

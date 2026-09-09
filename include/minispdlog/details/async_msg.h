@@ -22,9 +22,9 @@ enum class async_msg_type {
 };
 
 // Owns logger_name + payload so the producer stack buffer can die after enqueue.
-// Short lines stay in the 128-byte inline slot; longer lines grow once on the heap.
+// Short lines stay in the inline slot; longer lines grow once on the heap.
 struct log_msg_buffer : log_msg {
-    static constexpr std::size_t k_inline = 128;
+    static constexpr std::size_t k_inline = 256;
 
     log_msg_buffer() = default;
 

@@ -48,8 +48,7 @@ public:
 
 protected:
     void sink_it_(const details::log_msg& msg) override {
-        fmt::memory_buffer formatted;
-        this->format_message(msg, formatted);
+        auto& formatted = this->format_message(msg);
         callback_(msg, std::string(formatted.data(), formatted.size()));
     }
 

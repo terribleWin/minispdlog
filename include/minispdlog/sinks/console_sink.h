@@ -16,8 +16,7 @@ public:
 
 protected:
     void sink_it_(const details::log_msg& msg) override {
-        fmt::memory_buffer formatted;
-        this->format_message(msg, formatted);
+        auto& formatted = this->format_message(msg);
         std::fwrite(formatted.data(), 1, formatted.size(), stdout);
     }
     void flush_() override {
@@ -35,8 +34,7 @@ public:
 
 protected:
     void sink_it_(const details::log_msg& msg) override {
-        fmt::memory_buffer formatted;
-        this->format_message(msg, formatted);
+        auto& formatted = this->format_message(msg);
         std::fwrite(formatted.data(), 1, formatted.size(), stderr);
     }
     void flush_() override {

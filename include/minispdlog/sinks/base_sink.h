@@ -69,9 +69,17 @@ class base_sink : public sink {
         void format_message(const details::log_msg& msg, fmt::memory_buffer& dest){
             formatter_->format(msg, dest);
         }
+        // Reuse inline storage across records. Callers must copy the bytes
+        // before the next format_message on this sink (held under mutex_).
+        fmt::memory_buffer& format_message(const details::log_msg& msg) {
+            format_buf_.clear();
+            formatter_->format(msg, format_buf_);
+            return format_buf_;
+        }
         mutable Mutex mutex_;
         std::atomic<level> level_{level::trace};
         std::unique_ptr<formatter> formatter_;
+        fmt::memory_buffer format_buf_{};
 };
     struct null_mutex {
        void lock() {}

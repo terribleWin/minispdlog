@@ -73,6 +73,13 @@ TEST_CASE("get_thread_id differs across threads [utils][thread]") {
     CHECK(other_id != main_id);
 }
 
+TEST_CASE("get_pid is stable for the process [utils][thread]") {
+    const auto a = get_pid();
+    const auto b = get_pid();
+    CHECK(a != 0);
+    CHECK(a == b);
+}
+
 TEST_CASE("ltrim removes leading spaces [utils][string]") {
     std::string s = "  hello";
     auto& ref = ltrim(s);

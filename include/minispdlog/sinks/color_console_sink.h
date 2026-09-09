@@ -84,8 +84,7 @@ public:
 
 protected:
     void sink_it_(const details::log_msg& msg) override {
-        fmt::memory_buffer formatted;
-        this->format_message(msg, formatted);
+        auto& formatted = this->format_message(msg);
         write_colored(stdout, msg, formatted, colors_[static_cast<int>(msg.lvl)]);
     }
     void flush_() override { std::fflush(stdout); }
@@ -111,8 +110,7 @@ public:
 
 protected:
     void sink_it_(const details::log_msg& msg) override {
-        fmt::memory_buffer formatted;
-        this->format_message(msg, formatted);
+        auto& formatted = this->format_message(msg);
         write_colored(stderr, msg, formatted, colors_[static_cast<int>(msg.lvl)]);
     }
     void flush_() override { std::fflush(stderr); }

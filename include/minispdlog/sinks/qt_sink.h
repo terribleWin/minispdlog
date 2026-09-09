@@ -56,8 +56,7 @@ public:
 
 protected:
     void sink_it_(const details::log_msg& msg) override {
-        fmt::memory_buffer formatted;
-        this->format_message(msg, formatted);
+        auto& formatted = this->format_message(msg);
 
         // 去掉末尾换行：QTextEdit::append 会自行换行
         std::string line(formatted.data(), formatted.size());

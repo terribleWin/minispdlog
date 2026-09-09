@@ -92,7 +92,7 @@ inline fmt::memory_buffer& thread_payload_buf() {
                 if (!this->should_log(lvl)) return;
                 auto& buf = details::thread_payload_buf();
                 buf.clear();
-                ::fmt::format_to(std::back_inserter(buf), format, std::forward<Args>(args)...);
+                ::fmt::format_to(::fmt::appender(buf), format, std::forward<Args>(args)...);
                 details::log_msg log_message(
                     loc,
                     name_,

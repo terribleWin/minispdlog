@@ -78,8 +78,7 @@ std::string rotating_file_sink<Mutex>::calc_filename(const std::string& base_fil
 template<typename Mutex>
 void rotating_file_sink<Mutex>::sink_it_(const details::log_msg& msg) {
     // 格式化消息
-    fmt::memory_buffer formatted;
-    this->format_message(msg, formatted);
+    auto& formatted = this->format_message(msg);
     
     size_t msg_size = formatted.size();
     
