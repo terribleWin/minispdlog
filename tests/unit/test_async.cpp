@@ -5,7 +5,9 @@
 #include "minispdlog/minispdlog.h"
 
 #include <chrono>
+#include <condition_variable>
 #include <fstream>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -14,6 +16,31 @@
 using namespace minispdlog;
 using minispdlog::tests::mock_sink_mt;
 using minispdlog::tests::test_fixture;
+
+namespace {
+class gate_sink : public sinks::base_sink<std::mutex> {
+public:
+    void release() {
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            open_ = true;
+        }
+        cv_.notify_all();
+    }
+
+protected:
+    void sink_it_(const details::log_msg&) override {
+        std::unique_lock<std::mutex> lock(mu_);
+        cv_.wait(lock, [this] { return open_; });
+    }
+    void flush_() override {}
+
+private:
+    std::mutex mu_;
+    std::condition_variable cv_;
+    bool open_{false};
+};
+}  // namespace
 
 TEST_CASE("async_logger inherits from logger [async]") {
     auto mock = std::make_shared<mock_sink_mt>();
@@ -101,16 +128,17 @@ TEST_CASE("thread_pool destructor drains queued messages [async][thread_pool]") 
 }
 
 TEST_CASE("thread_pool post_log_nowait discards newest [async][thread_pool]") {
-    auto mock = std::make_shared<mock_sink_mt>();
+    auto sink = std::make_shared<gate_sink>();
     details::thread_pool pool(4, 1);
-    auto lg = std::make_shared<logger>("nowait", mock);
-    for (int i = 0; i < 10000; ++i) {
+    auto lg = std::make_shared<logger>("nowait", sink);
+    for (int i = 0; i < 32; ++i) {
         details::log_msg msg("nowait", level::info, "x");
         pool.post_log_nowait(std::shared_ptr<logger>(lg), msg);
     }
-    pool.post_flush(std::shared_ptr<logger>(lg), true);
     REQUIRE(pool.discard_count() > 0);
     REQUIRE(pool.overrun_count() == 0);
+    sink->release();
+    pool.post_flush(std::shared_ptr<logger>(lg), true);
 }
 
 TEST_CASE("thread_pool overrun_oldest drops oldest [async][thread_pool]") {
@@ -230,16 +258,17 @@ TEST_CASE("lockfree thread_pool delivers messages [async][lockfree][thread]") {
 }
 
 TEST_CASE("lockfree thread_pool discard_new counts drops [async][lockfree]") {
-    auto mock = std::make_shared<mock_sink_mt>();
+    auto sink = std::make_shared<gate_sink>();
     details::thread_pool pool(4, 1, async_queue_type::lockfree);
-    auto lg = std::make_shared<logger>("drop", mock);
+    auto lg = std::make_shared<logger>("drop", sink);
 
-    for (int i = 0; i < 20000; ++i) {
+    for (int i = 0; i < 32; ++i) {
         details::log_msg msg("drop", level::info, "x");
         pool.post_log(std::shared_ptr<logger>(lg), msg, async_overflow_policy::discard_new);
     }
-    pool.post_flush(std::shared_ptr<logger>(lg), true);
     REQUIRE(pool.discard_count() > 0);
+    sink->release();
+    pool.post_flush(std::shared_ptr<logger>(lg), true);
 }
 
 TEST_CASE("lockfree thread_pool rejects overrun_oldest [async][lockfree]") {

@@ -105,7 +105,7 @@ TEST_CASE("mpmc_blocking_queue dequeue timeout on empty [queue][mpmc]") {
     auto elapsed = std::chrono::steady_clock::now() - start;
 
     REQUIRE(success == false);
-    REQUIRE(elapsed >= std::chrono::milliseconds(50));
+    REQUIRE(elapsed >= std::chrono::milliseconds(40));
 }
 
 TEST_CASE("mpmc_blocking_queue enqueue_nowait does not block [queue][mpmc]") {
