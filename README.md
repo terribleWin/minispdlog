@@ -179,6 +179,7 @@ cmake --build build -j$(nproc)          # Windows: cmake --build build --config 
 | JSON Demo | `build/examples/json_log_demo` | 见 examples |
 | 回调 Demo | `build/examples/callback_log_demo` | 见 examples |
 | 批量/找回 Demo | `build/examples/buffered_log_demo` | 见 examples |
+| 彩色 Demo | `build/examples/color_log_demo` | 见 examples |
 | Qt 窗口（可选） | `build/examples/qt_log_viewer/...` | 需 `-DMINISPDLOG_WITH_QT=ON` |
 
 ---
@@ -259,7 +260,7 @@ cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 ## examples 目录怎么用
 
-`examples/` 下是**可直接构建运行的演示程序**，用来看库行为，而不是业务模板库。
+`examples/` 下是**可直接构建运行的演示程序**，作为简单 Demo 目录，其中的程序可以观察相关功能的行为。
 
 ### 1. `examples/rotating_log` — 滚动文件（默认会编）
 
@@ -322,7 +323,24 @@ cd build
 
 源码入口：`examples/buffered_log/main.cpp`。工厂：`buffered_logger_mt/st`、`async_buffered_file_mt`。
 
-### 5. `examples/qt_log_viewer` — Qt 窗口看日志（可选）
+### 5. `examples/color_log` — 终端彩色 / 局部着色 / 同时写文件（默认会编）
+
+演示 `stdout_color_mt` / `stderr_color_mt`：用 pattern 里的 `%^` … `%$` 标记一段着色区间（默认只给级别名上色）；同一 logger 再挂 `file_sink` 时，终端带 ANSI，文件是纯文本。
+
+```bash
+cmake --build build --target color_log_demo -j$(nproc)
+
+# 务必在 build 目录下运行（日志写在「当前工作目录」/logs）
+cd build
+./examples/color_log_demo
+# Windows MSVC 多配置生成器：
+#   .\examples\Debug\color_log_demo.exe
+cat logs/demo.color.log
+```
+
+源码入口：`examples/color_log/main.cpp`。工厂：`stdout_color_mt`、`stderr_color_mt`、`basic_logger_mt`。
+
+### 6. `examples/qt_log_viewer` — Qt 窗口看日志（可选）
 
 把日志刷到 `QTextEdit` / `QPlainTextEdit`，依赖 Qt Widgets。
 
@@ -340,7 +358,7 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 说明：
 
 - 无显示器时，单测里的 Qt 用例可用 offscreen；**看窗口**请用本机图形环境（纯 WSL 常缺 GUI）。
-- 未开 `-DMINISPDLOG_WITH_QT=ON` 或不装 Qt 时，**不会**编这个 example，不影响核心库与 `rotating_log_demo` / `json_log_demo` / `callback_log_demo` / `buffered_log_demo`。
+- 未开 `-DMINISPDLOG_WITH_QT=ON` 或不装 Qt 时，**不会**编这个 example，不影响核心库与 `rotating_log_demo` / `json_log_demo` / `callback_log_demo` / `buffered_log_demo` / `color_log_demo`。
 
 ### examples 一览
 
@@ -350,6 +368,7 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 | `examples/json_log/` | `json_log_demo` | 是 | JSON Lines 落盘 Demo |
 | `examples/callback_log/` | `callback_log_demo` | 是 | 回调旁路（计数 / 告警） |
 | `examples/buffered_log/` | `buffered_log_demo` | 是 | 批量写、双缓冲、WAL/salvage |
+| `examples/color_log/` | `color_log_demo` | 是 | 终端彩色、局部着色、同时写文件 |
 | `examples/qt_log_viewer/` | `qt_log_viewer` | 需 Qt 选项 | GUI 实时看日志 |
 
 ---
@@ -457,6 +476,8 @@ minispdlog/
 │   ├── rotating_log/           # 滚动文件 Demo
 │   ├── json_log/               # JSON Lines Demo
 │   ├── callback_log/           # 回调旁路 Demo
+│   ├── buffered_log/           # 批量写 / 找回 Demo
+│   ├── color_log/              # 终端彩色 Demo
 │   └── qt_log_viewer/          # Qt Demo（可选）
 ├── scripts/                    # setup_qt 等
 └── third_party/fmt/

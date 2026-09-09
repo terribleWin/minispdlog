@@ -118,6 +118,7 @@ add_subdirectory(examples/rotating_log)
 add_subdirectory(examples/json_log)
 add_subdirectory(examples/callback_log)
 add_subdirectory(examples/buffered_log)
+add_subdirectory(examples/color_log)
 
 if(MINISPDLOG_WITH_QT AND MINISPDLOG_QT_FOUND)
     add_subdirectory(examples/qt_log_viewer)
