@@ -75,7 +75,7 @@ jobs:
         run: cmake --build build --parallel $(nproc)
 
       - name: Run tests (ctest)
-        run: ctest --test-dir build --output-on-failure --parallel $(nproc)
+        run: ctest --test-dir build --output-on-failure --parallel $(nproc) --no-tests=error
 
       - name: Run benchmarks (Release only)
         if: matrix.build_type == 'Release'
@@ -137,4 +137,4 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Run tests
-        run: ctest --test-dir build --build-config Release --output-on-failure
+        run: ctest --test-dir build --build-config Release --output-on-failure --no-tests=error

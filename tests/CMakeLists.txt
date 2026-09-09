@@ -99,9 +99,9 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     if(MINISPDLOG_ENABLE_COVERAGE)
         message(STATUS "Coverage enabled for minispdlog_tests")
 
-        target_compile_options(minispdlog PRIVATE --coverage -O0)
+        target_compile_options(minispdlog PRIVATE --coverage -O0 -fprofile-update=atomic)
         target_link_options(minispdlog PUBLIC --coverage)
-        target_compile_options(minispdlog_tests PRIVATE --coverage -O0)
+        target_compile_options(minispdlog_tests PRIVATE --coverage -O0 -fprofile-update=atomic)
         target_link_options(minispdlog_tests PRIVATE --coverage)
 
         find_program(LCOV_PATH lcov)
@@ -109,20 +109,12 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
         if(LCOV_PATH AND GENHTML_PATH)
             add_custom_target(coverage
-                COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-                COMMAND ${LCOV_PATH} --capture --directory ${CMAKE_BINARY_DIR}
-                    --base-directory ${PROJECT_SOURCE_DIR}
-                    --no-external
-                    --output-file coverage.info
-                    --rc lcov_branch_coverage=0
-                    --ignore-errors source,graph,gcov
-                COMMAND ${LCOV_PATH} --remove coverage.info
-                    '*/third_party/*'
-                    '*/tests/framework/*'
-                    --output-file coverage.info.cleaned
-                    --rc lcov_branch_coverage=0
-                    --ignore-errors source,graph,gcov
-                COMMAND ${GENHTML_PATH} coverage.info.cleaned --output-directory coverage_report
+                COMMAND ${CMAKE_COMMAND} -E env bash
+                    "${PROJECT_SOURCE_DIR}/scripts/coverage.sh"
+                    "${CMAKE_BINARY_DIR}"
+                    "${LCOV_PATH}"
+                    "${GENHTML_PATH}"
+                    "${CMAKE_CTEST_COMMAND}"
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 DEPENDS minispdlog_tests
                 COMMENT "Generating coverage report (this may take a while)..."

@@ -112,6 +112,7 @@ endif()
 
 add_subdirectory(third_party/fmt)
 add_subdirectory(src)
+enable_testing()
 add_subdirectory(tests)
 add_subdirectory(examples/rotating_log)
 add_subdirectory(examples/json_log)
