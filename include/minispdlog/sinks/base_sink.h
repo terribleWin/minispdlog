@@ -2,10 +2,13 @@
 #pragma once
 #include "../common.h"
 #include "../details/log_msg.h"
-#include <mutex>
-#include <memory>
-#include "../pattern_formatter.h"
 #include "../formatter.h"
+#include "../pattern_formatter.h"
+
+#include <atomic>
+#include <memory>
+#include <mutex>
+
 namespace minispdlog {
     namespace sinks {
 class sink {
@@ -28,7 +31,7 @@ template<typename Mutex>
 class base_sink : public sink {
     public:
         base_sink()
-            : level_(level::trace), formatter_(std::make_unique<pattern_formatter>()) {}
+            : formatter_(std::make_unique<pattern_formatter>()) {}
         base_sink(const base_sink&) = delete;
         base_sink& operator=(const base_sink&) = delete;
         void log(const details::log_msg& msg) override {
@@ -36,12 +39,10 @@ class base_sink : public sink {
             sink_it_(msg);
         }
         level get_level() const override {
-            std::lock_guard<Mutex> lock(mutex_);
-            return level_;
+            return level_.load(std::memory_order_relaxed);
         }
         void set_level(level log_level) override {
-            std::lock_guard<Mutex> lock(mutex_);
-            level_ = log_level;
+            level_.store(log_level, std::memory_order_relaxed);
         }
         bool should_log(level msg_level) const override {
             return msg_level >= get_level();
@@ -69,7 +70,7 @@ class base_sink : public sink {
             formatter_->format(msg, dest);
         }
         mutable Mutex mutex_;
-        level level_;
+        std::atomic<level> level_{level::trace};
         std::unique_ptr<formatter> formatter_;
 };
     struct null_mutex {

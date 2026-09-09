@@ -319,3 +319,21 @@ TEST_CASE("empty source location omits source flags [formatter]") {
     fmt.format(msg, buf);
     REQUIRE(std::string(buf.data(), buf.size()) == "   \n");
 }
+
+TEST_CASE("pattern_formatter reuses Y-m-d H:M:S within the same second [formatter]") {
+    const auto tp = log_clock::time_point(std::chrono::seconds(1'700'000'000));
+    details::log_msg a(tp, details::source_loc{}, "lg", level::info, "a");
+    details::log_msg b(tp + std::chrono::milliseconds(250), details::source_loc{}, "lg", level::info,
+                       "b");
+    pattern_formatter fmt("%Y-%m-%d %H:%M:%S.%e");
+    fmt::memory_buffer first;
+    fmt::memory_buffer second;
+    fmt.format(a, first);
+    fmt.format(b, second);
+    const auto line1 = std::string(first.data(), first.size());
+    const auto line2 = std::string(second.data(), second.size());
+    REQUIRE(line1.size() >= 23);
+    REQUIRE(line1.substr(0, 19) == line2.substr(0, 19));
+    REQUIRE(line1.find(".000") != std::string::npos);
+    REQUIRE(line2.find(".250") != std::string::npos);
+}

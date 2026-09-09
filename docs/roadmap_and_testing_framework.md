@@ -1,8 +1,31 @@
 # minispdlog 迭代更新路线图 & 工业化测试框架设计
 
-> 文档版本：v1.0  
-> 生成时间：2025年7月11日  
-> 适用对象：minispdlog 项目维护者
+> 文档版本：v1.1（对照当前仓库修订）  
+> 原文：2025-07-11 规划稿；下文 **§0** 是落地状态，后面 8 周计划保留为历史设计，不要再当成「尚未开工」。
+
+---
+
+## 0. 当前落地状态（以代码为准）
+
+规划里已经做完、文档应视为**现有架构**的部分：
+
+| 规划项 | 现状 |
+|--------|------|
+| doctest 单入口 + mock_sink + CTest | `tests/unit/` + `minispdlog_tests` |
+| RelASan / RelTSan / coverage / ASan·TSan CI | 根 `CMakeLists.txt`、`.github/workflows/ci.yml` |
+| `daily_file_sink` + `max_files` | `daily_logger_mt/st` |
+| `rotating_file_sink`（按大小 + max_files） | `rotating_logger_mt` |
+| JSON Lines | `json_formatter` + `json_file/console/stderr/rotating/daily` + `json_logger_*` / `rotating_json_*` / `daily_json_*` / `async_json_file_mt` / `async_json_rotating_mt` |
+| 批量写 / 双缓冲 / WAL | `buffered_file_sink` + `json_file_sink` + `buffered_logger_*` / `async_buffered_file_mt`；`install_crash_flush` |
+| 回调旁路 | `callback_sink` + `callback_logger_*` / `async_callback_mt` |
+| `qt_sink` + 示例 + offscreen 单测 | `-DMINISPDLOG_WITH_QT=ON` |
+| 无锁 MPSC 接入异步 | `init_lockfree_thread_pool`（单 worker；禁止 `overrun_oldest`） |
+| 优雅关闭 | `minispdlog::shutdown()` |
+| clang-format / clang-tidy CI | `scripts/lint.sh`（format 仍是允许名单，不是全树） |
+
+**仍未做**（规划后半仍有效）：hourly sink、backtrace、syslog、android/windebug、object pool、完全 signal-safe 的崩溃日志（当前 `install_crash_flush` 是尽力而为，不是 async-signal-safe）等。
+
+权威架构说明见仓库根目录 [`explanation.md`](../explanation.md) 与 [`README.md`](../README.md)。
 
 ---
 
@@ -25,22 +48,24 @@ minispdlog 目前已实现的核心模块：
 
 | 层级 | 组件 | 状态 | 成熟度 |
 |------|------|------|--------|
-| 用户 API | `minispdlog::info()` 等全局接口 | ✅ 可用 | 中 |
-| 管理调度 | `registry`（单例注册表） | ✅ 可用 | 中 |
-| 管理调度 | `async_logger` + `thread_pool` | ✅ 可用 | 中 |
-| 管理调度 | `mpmc_blocking_queue` | ✅ 可用 | 中 |
-| 管理调度 | `mpsc_queue` / `spsc_queue`（无锁） | ✅ 可用 | 低（待验证） |
+| 用户 API | `minispdlog::info()`、`sourced_fmt`、工厂函数 | ✅ 可用 | 中 |
+| 管理调度 | `registry` + `shutdown()` | ✅ 可用 | 中 |
+| 管理调度 | `async_logger` + `thread_pool`（blocking / lockfree） | ✅ 可用 | 中 |
+| 管理调度 | `mpmc_blocking_queue`；溢出 `block` / `overrun_oldest` / `discard_new` | ✅ 可用 | 中 |
+| 管理调度 | `mpsc_queue` / `spsc_queue`（无锁） | ✅ 可用 | 中（已接入 lockfree 池） |
 | 输出格式化 | `sink` / `base_sink<Mutex>` | ✅ 可用 | 中 |
-| 输出格式化 | `console_sink` / `color_console_sink` | ✅ 可用 | 中 |
-| 输出格式化 | `file_sink` / `rotating_file_sink` | ✅ 可用 | 中 |
-| 输出格式化 | `pattern_formatter` | ✅ 可用 | 中 |
-| 基础设施 | `level` / `log_msg` / `utils` | ✅ 可用 | 高 |
-| 基础设施 | 编译时级别控制 | ✅ 可用 | 中 |
+| 输出格式化 | `console` / `color_*`（`%^`/`%$` 区间着色） | ✅ 可用 | 中 |
+| 输出格式化 | `file` / `rotating` / `daily` / `json_*` / `callback` / 可选 `qt` | ✅ 可用 | 中 |
+| 输出格式化 | `pattern_formatter` / `json_formatter` | ✅ 可用 | 中 |
+| 基础设施 | `level` / `log_msg`（含 `source_loc`、`color_range_*`）/ `utils` | ✅ 可用 | 高 |
+| 基础设施 | 编译时级别控制（宏路径） | ✅ 可用 | 中 |
 | 第三方 | `fmt` 格式化库 | ✅ 集成 | — |
 
 ### 1.2 现有测试问题清单
 
 **当前测试代码（`tests/` 目录）存在以下系统性缺陷：**
+
+> **v1.1 注**：P1–P3、P7、P9 以及 P5/P6 的 CI 形态已落地（见 §0）。下表保留为当时诊断，便于对照「为什么要上 doctest」。
 
 | 问题编号 | 问题描述 | 严重程度 | 影响 |
 |----------|----------|----------|------|

@@ -23,6 +23,10 @@ struct thread_pool_options {
     std::size_t queue_size = 8192;
     std::size_t thread_count = 1;
     async_queue_type queue_type = async_queue_type::blocking;
+    /// Wake a sleeping worker after this many log records (flush/terminate always wake).
+    std::size_t wake_batch = 64;
+    /// Or after this many microseconds with no wake (covers the tail of a burst).
+    std::uint32_t wake_interval_us = 100;
 };
 
 }  // namespace minispdlog

@@ -6,9 +6,13 @@
 #include "level.h"
 #include "sinks/console_sink.h"
 #include "sinks/color_console_sink.h"
+#include "batch_config.h"
 #include "sinks/file_sink.h"
+#include "sinks/null_sink.h"
+#include "sinks/buffered_file_sink.h"
 #include "sinks/rotating_file_sink.h"
 #include "sinks/daily_file_sink.h"
+#include "sinks/json_sink.h"
 #include "sinks/callback_sink.h"
 #ifdef MINISPDLOG_WITH_QT
 #include "sinks/qt_sink.h"
@@ -65,6 +69,12 @@ namespace minispdlog{
     // Call before main() returns if you used async logging.
     MINISPDLOG_API void shutdown();
 
+    /// Write every buffered file's front buffer to disk (tests + crash handler).
+    MINISPDLOG_API void dump_buffered_logs() noexcept;
+
+    /// Dump buffered logs on SIGSEGV/SIGABRT (and Windows unhandled SEH). Idempotent.
+    MINISPDLOG_API void install_crash_flush();
+
     //快速创建并注册 logger
     //创建一个多线程安全的控制台 logger
       inline std::shared_ptr<logger> stdout_color_mt(const std::string& logger_name) {
@@ -109,6 +119,26 @@ namespace minispdlog{
     register_logger(new_logger);
     return new_logger;
 }
+    inline std::shared_ptr<logger> buffered_logger_mt(
+        const std::string& logger_name,
+        const std::string& filename,
+        bool truncate = false,
+        batch_config cfg = {}) {
+        auto sink = std::make_shared<sinks::buffered_file_sink_mt>(filename, truncate, cfg);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> buffered_logger_st(
+        const std::string& logger_name,
+        const std::string& filename,
+        bool truncate = false,
+        batch_config cfg = {}) {
+        auto sink = std::make_shared<sinks::buffered_file_sink_st>(filename, truncate, cfg);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
     //创建滚动文件 logger
     inline std::shared_ptr<logger> rotating_logger_mt(
     const std::string& logger_name,
@@ -150,6 +180,134 @@ namespace minispdlog{
     register_logger(new_logger);
     return new_logger;
 }
+    // JSON Lines 文件 logger（每行一个对象，给 ELK/Loki 用）
+    inline std::shared_ptr<logger> json_logger_mt(
+        const std::string& logger_name,
+        const std::string& filename,
+        bool truncate = false,
+        batch_config cfg = {}) {
+        auto sink = std::make_shared<sinks::json_file_sink_mt>(filename, truncate, cfg);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> json_logger_st(
+        const std::string& logger_name,
+        const std::string& filename,
+        bool truncate = false,
+        batch_config cfg = {}) {
+        auto sink = std::make_shared<sinks::json_file_sink_st>(filename, truncate, cfg);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> stdout_json_mt(const std::string& logger_name) {
+        auto sink = std::make_shared<sinks::json_console_sink_mt>();
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> stdout_json_st(const std::string& logger_name) {
+        auto sink = std::make_shared<sinks::json_console_sink_st>();
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> stderr_json_mt(const std::string& logger_name) {
+        auto sink = std::make_shared<sinks::json_stderr_sink_mt>();
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> stderr_json_st(const std::string& logger_name) {
+        auto sink = std::make_shared<sinks::json_stderr_sink_st>();
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> rotating_json_logger_mt(
+        const std::string& logger_name,
+        const std::string& filename,
+        std::size_t max_size,
+        std::size_t max_files) {
+        auto sink = std::make_shared<sinks::json_rotating_file_sink_mt>(filename, max_size, max_files);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> rotating_json_logger_st(
+        const std::string& logger_name,
+        const std::string& filename,
+        std::size_t max_size,
+        std::size_t max_files) {
+        auto sink = std::make_shared<sinks::json_rotating_file_sink_st>(filename, max_size, max_files);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> daily_json_logger_mt(
+        const std::string& logger_name,
+        const std::string& filename,
+        int rotation_hour = 0,
+        int rotation_minute = 0,
+        bool truncate = false,
+        std::size_t max_files = 0) {
+        auto sink = std::make_shared<sinks::json_daily_file_sink_mt>(
+            filename, rotation_hour, rotation_minute, truncate, max_files);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> daily_json_logger_st(
+        const std::string& logger_name,
+        const std::string& filename,
+        int rotation_hour = 0,
+        int rotation_minute = 0,
+        bool truncate = false,
+        std::size_t max_files = 0) {
+        auto sink = std::make_shared<sinks::json_daily_file_sink_st>(
+            filename, rotation_hour, rotation_minute, truncate, max_files);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    // 回调 logger：不写新 Sink 类，把行交给业务（告警、计数、GUI 模拟）
+    inline std::shared_ptr<logger> callback_logger_mt(
+        const std::string& logger_name,
+        sinks::callback_sink_mt::formatted_callback_t on_log,
+        sinks::callback_sink_mt::flush_callback_t on_flush = {}) {
+        auto sink = std::make_shared<sinks::callback_sink_mt>(std::move(on_log), std::move(on_flush));
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> callback_logger_mt(
+        const std::string& logger_name,
+        sinks::callback_sink_mt::record_callback_t on_log,
+        sinks::callback_sink_mt::flush_callback_t on_flush = {}) {
+        auto sink = std::make_shared<sinks::callback_sink_mt>(std::move(on_log), std::move(on_flush));
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> callback_logger_st(
+        const std::string& logger_name,
+        sinks::callback_sink_st::formatted_callback_t on_log,
+        sinks::callback_sink_st::flush_callback_t on_flush = {}) {
+        auto sink = std::make_shared<sinks::callback_sink_st>(std::move(on_log), std::move(on_flush));
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> callback_logger_st(
+        const std::string& logger_name,
+        sinks::callback_sink_st::record_callback_t on_log,
+        sinks::callback_sink_st::flush_callback_t on_flush = {}) {
+        auto sink = std::make_shared<sinks::callback_sink_st>(std::move(on_log), std::move(on_flush));
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
 
     //全局日志接口（sourced_fmt 在调用点捕获源码位置，再交给 logger::log）
     template<typename... Args>

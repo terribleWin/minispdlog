@@ -41,12 +41,12 @@ int main() {
 }
 ```
 
-典型输出：
+默认 pattern 是 `[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] %v`。彩色 sink 只给 `%^`…`%$` 之间（级别名）上色，方括号保持终端默认色：
 
 ```
-[2026-05-31 10:30:45] [info] Hello, World!
-[2026-05-31 10:30:45] [warn] Warning: 42
-[2026-05-31 10:30:45] [error] Error: something went wrong
+[2026-05-31 10:30:45.123] [app] [info] Hello, World!
+[2026-05-31 10:30:45.123] [app] [warn] Warning: 42
+[2026-05-31 10:30:45.123] [app] [error] Error: something went wrong
 ```
 
 滚动文件（磁盘不无限涨）：
@@ -81,15 +81,74 @@ int main() {
 }
 ```
 
-异步文件（业务线程只入队）：
+结构化 JSON Lines（每行一个对象，给采集器 / ELK / Loki）：
+
+```cpp
+#include <minispdlog/minispdlog.h>
+#include <filesystem>
+
+int main() {
+    std::filesystem::create_directories("logs");
+    auto lg = minispdlog::json_logger_mt("app", "logs/app.json.log", true);
+    lg->info("user {} login", 42);
+    lg->flush();
+    return 0;
+}
+```
+
+任意 sink 也可只换 formatter：`sink->set_formatter(std::make_unique<minispdlog::json_formatter>());`。生产路径用专用 sink，`set_pattern` / `set_formatter` 都锁在 JSON Lines：`json_logger_mt`（双缓冲批量写、LF 换行）、`rotating_json_logger_mt`、`daily_json_logger_mt`，容器 stdout/stderr 用 `stdout_json_mt` / `stderr_json_mt`。异步：`async_json_file_mt` / `async_json_rotating_mt`。
+
+批量写入 + 双缓冲 + 崩溃找回（`buffered_file_sink`；`json_file_sink` 走同一套）：
+
+```cpp
+#include <minispdlog/minispdlog.h>
+
+int main() {
+    minispdlog::install_crash_flush();  // SIGSEGV/SIGABRT 时尽量把 front buffer 写出
+    minispdlog::batch_config cfg;       // 默认 64KiB / 256 条 / 50ms，fflush
+    cfg.commit = minispdlog::durability::fflush;  // 或 fsync
+    auto lg = minispdlog::buffered_logger_mt("app", "logs/app.log", true, cfg);
+    lg->info("batched {}", 1);
+    lg->flush();  // 空闲时也要靠 flush / shutdown / 析构才落盘
+    return 0;
+}
+```
+
+打开已有文件时会：回放 `*.minispdlog-wal`（按文件偏移去重，避免半截 fwrite 重复），再按最后 `\n` 截掉半截行。进程崩溃时 front buffer 仍在内存里，靠 `install_crash_flush()` / `dump_buffered_logs()` 尽力写出；`kill -9` 保不住未提交的 front。异步队列里的消息同样不在这套 WAL 里。
+
+回调（不写新 Sink 类：告警、计数、把行交给业务；可与控制台/文件并用）：
+
+```cpp
+#include <minispdlog/minispdlog.h>
+
+int main() {
+    auto lg = minispdlog::callback_logger_mt("app",
+        [](const minispdlog::details::log_msg& msg, const std::string& line) {
+            if (msg.lvl >= minispdlog::level::error) {
+                // line 是已拥有的字符串，可存；payload / logger_name 只在回调期内有效
+                (void)line;
+            }
+        },
+        [] { /* flush 时汇总 */ });
+    lg->error("disk full");
+    lg->flush();
+    minispdlog::drop("app");
+}
+```
+
+`callback_logger_st` 单线程版；异步用 `async_callback_mt`（`#include <minispdlog/async.h>`）。回调跑在 sink 锁内，不要对同一 sink 再 `log`/`flush`。只要格式化行时用单参数 `void(const std::string&)`。无 Qt 时用回调；有窗口时用 `qt_sink`。
+
+异步文件（业务线程只入队；进程退出前要 `shutdown()`）：
 
 ```cpp
 #include <minispdlog/async.h>
 
 int main() {
-    minispdlog::init_thread_pool(8192, 2);                 // 或 init_lockfree_thread_pool(8192)
+    minispdlog::init_thread_pool(8192, 2);  // 或 init_lockfree_thread_pool(8192)
     auto lg = minispdlog::async_file_mt("async", "async.log", true);
+    // 结构化异步：async_json_file_mt / async_json_rotating_mt
     lg->info("Fast async logging!");
+    minispdlog::shutdown();  // 排空队列、停线程池、drop 已注册 logger
     return 0;
 }
 ```
@@ -114,9 +173,12 @@ cmake --build build -j$(nproc)          # Windows: cmake --build build --config 
 
 | 目标 | 路径（大致） | 说明 |
 |------|----------------|------|
-| 静态库 | `build/src/libminispdlog.a`（或对应 `.lib`） | 给业务链接 |
-| 单测 | `build/tests/minispdlog_tests` | 见下一节 |
+| 静态库 | `build/src/libminispdlog.a`（MSVC：`build/src/<Config>/minispdlog.lib`） | 给业务链接 |
+| 单测 | `build/tests/minispdlog_tests`（MSVC：`build/tests/<Config>/`） | 见下一节 |
 | 滚动 Demo | `build/examples/rotating_log_demo` | 见 examples |
+| JSON Demo | `build/examples/json_log_demo` | 见 examples |
+| 回调 Demo | `build/examples/callback_log_demo` | 见 examples |
+| 批量/找回 Demo | `build/examples/buffered_log_demo` | 见 examples |
 | Qt 窗口（可选） | `build/examples/qt_log_viewer/...` | 需 `-DMINISPDLOG_WITH_QT=ON` |
 
 ---
@@ -140,13 +202,14 @@ ctest --test-dir build --output-on-failure
 
 ### 按标签 / 名字过滤（常用）
 
-用例带标签，例如 `[queue]`、`[async]`、`[lockfree]`、`[sink]`。
+用例带标签，例如 `[queue]`、`[async]`、`[lockfree]`、`[sink]`、`[daily]`、`[json]`、`[color]`。
 
 ```bash
-# 只跑带某标签的用例（注意给参数加引号）
+# 只跑带某标签的用例（注意给参数加引号；PowerShell 里 [json] 可能被当成通配符，改用 -tc）
 ./build/tests/minispdlog_tests "[queue]"
 ./build/tests/minispdlog_tests "[async]"
-./build/tests/minispdlog_tests "[lockfree]"
+./build/tests/minispdlog_tests -tc="*json*"
+./build/tests/minispdlog_tests -tc="*daily*"
 
 # 按用例名子串过滤
 ./build/tests/minispdlog_tests -tc="*spsc*"
@@ -222,7 +285,44 @@ logs/demo_rotating.3.log
 
 源码入口：`examples/rotating_log/main.cpp`。
 
-### 2. `examples/qt_log_viewer` — Qt 窗口看日志（可选）
+### 2. `examples/json_log` — JSON Lines 文件（默认会编）
+
+演示 `json_file_sink`（`FILE*` 二进制 NDJSON）和 `rotating_json_logger_mt`：每条一行 JSON，含 time/ts/level/logger/msg，滚动后仍是 JSON，不会被 `set_pattern` 改回文本。
+
+```bash
+cmake --build build --target json_log_demo -j$(nproc)
+cd build
+./examples/json_log_demo
+cat logs/demo.json.log
+```
+
+源码入口：`examples/json_log/main.cpp`。
+
+### 3. `examples/callback_log` — 回调旁路（默认会编）
+
+演示控制台 + `callback_sink`：人看终端，业务钩子按级别计数、保留最近错误，并在 `flush` 时打印汇总。
+
+```bash
+cmake --build build --target callback_log_demo -j$(nproc)
+cd build
+./examples/callback_log_demo
+```
+
+源码入口：`examples/callback_log/main.cpp`。工厂：`callback_logger_mt/st`、`async_callback_mt`。
+
+### 4. `examples/buffered_log` — 批量写 / 双缓冲 / 崩溃找回（默认会编）
+
+演示 `buffered_logger_mt`：小阈值批量落盘；再打开带半截行的文件做 salvage；用 `.minispdlog-wal` 模拟崩溃后回放。入口调用 `install_crash_flush()`。
+
+```bash
+cmake --build build --target buffered_log_demo -j$(nproc)
+cd build
+./examples/buffered_log_demo
+```
+
+源码入口：`examples/buffered_log/main.cpp`。工厂：`buffered_logger_mt/st`、`async_buffered_file_mt`。
+
+### 5. `examples/qt_log_viewer` — Qt 窗口看日志（可选）
 
 把日志刷到 `QTextEdit` / `QPlainTextEdit`，依赖 Qt Widgets。
 
@@ -240,13 +340,16 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 说明：
 
 - 无显示器时，单测里的 Qt 用例可用 offscreen；**看窗口**请用本机图形环境（纯 WSL 常缺 GUI）。
-- 未开 `-DMINISPDLOG_WITH_QT=ON` 或不装 Qt 时，**不会**编这个 example，不影响核心库与 `rotating_log_demo`。
+- 未开 `-DMINISPDLOG_WITH_QT=ON` 或不装 Qt 时，**不会**编这个 example，不影响核心库与 `rotating_log_demo` / `json_log_demo` / `callback_log_demo` / `buffered_log_demo`。
 
 ### examples 一览
 
 | 目录 | CMake 目标 | 默认构建？ | 用途 |
 |------|------------|------------|------|
 | `examples/rotating_log/` | `rotating_log_demo` | 是 | 滚动日志落盘 Demo |
+| `examples/json_log/` | `json_log_demo` | 是 | JSON Lines 落盘 Demo |
+| `examples/callback_log/` | `callback_log_demo` | 是 | 回调旁路（计数 / 告警） |
+| `examples/buffered_log/` | `buffered_log_demo` | 是 | 批量写、双缓冲、WAL/salvage |
 | `examples/qt_log_viewer/` | `qt_log_viewer` | 需 Qt 选项 | GUI 实时看日志 |
 
 ---
@@ -256,21 +359,25 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 ### 同步日志
 
 - **多级别**：trace / debug / info / warn / error / critical，支持全局与单 logger 过滤
-- **多 Sink**：控制台、文件、按大小滚动、按天切分、回调；可选 Qt
-- **可扩展格式**：`pattern_formatter`（`%Y %m %d %H %M %S %e %f %l %L %v %t %P %n %s %# %! %@ %^ %$` 等）
-- **彩色输出**：ANSI SGR
-- **线程安全**：`base_sink<Mutex>` → `_mt` / `_st`
+- **多 Sink**：控制台、文件、按大小滚动、按天切分、JSON Lines、批量双缓冲文件、回调；可选 Qt
+- **落盘耐久**：`buffered_file_sink` / `json_file_sink` 双缓冲批量 `fwrite`，WAL 回放 + 半截行 salvage；可选 `durability::fsync` 与 `install_crash_flush()`
+- **两种 formatter**：`pattern_formatter` 拼文本行；`json_formatter` 拼 JSON Lines。Sink 通过 `set_pattern` / `set_formatter` 安装（`json_*` sink 固定 JSON）
+- **占位符**：`%Y %m %d %H %M %S %e %f %l %L %v %t %P %n %s %# %! %@`；`%^` / `%$` 只标记着色区间，不输出字符
+- **彩色输出**：`color_*_sink` 按 `log_msg::color_range_*` 给 `[start, end)` 套 ANSI；区间为空则整行着色
+- **源码位置**：`lg.info("n={}", 7)` 经 `sourced_fmt` 在调用点捕获 file/line/func；宏 `MINISPDLOG_INFO` 用 `MINISPDLOG_LOC`
+- **线程安全**：`base_sink<Mutex>` → `_mt` / `_st`；logger 的 sink 列表 copy-on-write，热路径不加 logger 锁做 I/O
 
 ### 异步日志
 
 - **MPMC 阻塞队列**（默认）：多 worker，`block` / `overrun_oldest` / `discard_new`
 - **无锁 MPSC**（可选）：`init_lockfree_thread_pool`，单 worker；只支持 `block` / `discard_new`，`overrun_oldest` 会抛异常
-- **接口透明**：`async_logger` 继承 `logger`；也可直接用 `lockfree_queue.h`
+- **接口透明**：`async_logger` 继承 `logger`，worker 走 `backend_sink_it_`（不再入队）；`async_file_mt` / `async_buffered_file_mt` / `async_json_file_mt` / `async_json_rotating_mt` / `async_callback_mt`
+- **关闭**：`minispdlog::shutdown()` 先 flush，再停全局线程池，再 `drop_all`
 
 ### 工程化
 
 - Registry、工厂函数、`minispdlog::info()` 全局 API
-- doctest 单入口测试、可选 Benchmark / ASan / TSan CI
+- doctest 单入口、CTest；CI：lint（`.clang-format` / `.clang-tidy`）+ g++/clang × Release/ASan/TSan + Windows MSVC
 
 ---
 
@@ -288,6 +395,22 @@ logger->add_sink(file);
 logger->info("This goes to both console and file");
 ```
 
+### 回调旁路
+
+不必写新 Sink 类。单参数只拿格式化行；双参数还能读 `level` / `payload`。`line` 可保存；`msg` 里的 view 只在回调期间有效。不要在回调里对同一 sink 再打日志（持有 sink 锁）。
+
+```cpp
+auto console = std::make_shared<minispdlog::sinks::color_console_sink_mt>();
+auto hook = std::make_shared<minispdlog::sinks::callback_sink_mt>(
+    [](const minispdlog::details::log_msg& msg, const std::string& line) {
+        if (msg.lvl >= minispdlog::level::error) { /* 告警 / 计数 */ (void)line; }
+    });
+auto logger = std::make_shared<minispdlog::logger>(
+    "app", minispdlog::logger::sink_list{console, hook});
+```
+
+工厂：`callback_logger_mt/st`；异步：`async_callback_mt`。完整演示见 `examples/callback_log`。
+
 ### 自定义 pattern
 
 ```cpp
@@ -303,7 +426,9 @@ logger->log(minispdlog::level::info, "hello {}", name);  // 一条 log 即可输
 // logger->set_formatter(std::make_unique<MyFormatter>());
 ```
 
-同一场景用同一套分隔：日期 `%Y-%m-%d`，时间 `%H:%M:%S.%e`（微秒用 `%f` 替代 `%e`），源码 `%s:%#` / `%@`，字段 `[..] [..]`。`log()` / `info()` 会填充时间、线程、进程和源码位置。
+同一场景用同一套分隔：日期 `%Y-%m-%d`，时间 `%H:%M:%S.%e`（微秒用 `%f` 替代 `%e`），源码 `%s:%#` / `%@`，字段 `[..] [..]`。`%^`…`%$` 包住要上色的片段（默认只包 `%L`）。`log()` / `info()` 会填充时间、线程、进程和源码位置。
+
+结构化输出用 `json_formatter`（字段：`time` / `ts` / `level` / `logger` / `msg` / `tid` / `pid`，有源码位置时带 `source`），不要用 pattern 去「手拼 JSON」。
 
 分层与异步热路径细节见 [`explanation.md`](explanation.md)。
 
@@ -320,8 +445,9 @@ minispdlog/
 │   ├── async.h / async_config.h
 │   ├── lockfree_queue.h
 │   ├── logger.h / registry.h / level.h
+│   ├── json_formatter.h / pattern_formatter.h
 │   ├── details/                # 队列、线程池、消息
-│   └── sinks/                  # console / file / rotating / daily / callback / qt
+│   └── sinks/                  # console / file / rotating / daily / json / callback / qt
 ├── src/                        # 静态库实现
 ├── tests/
 │   ├── test_main.cpp           # 单测入口
@@ -329,6 +455,8 @@ minispdlog/
 │   └── framework/              # doctest + mock_sink
 ├── examples/
 │   ├── rotating_log/           # 滚动文件 Demo
+│   ├── json_log/               # JSON Lines Demo
+│   ├── callback_log/           # 回调旁路 Demo
 │   └── qt_log_viewer/          # Qt Demo（可选）
 ├── scripts/                    # setup_qt 等
 └── third_party/fmt/

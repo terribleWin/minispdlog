@@ -1,8 +1,12 @@
 #include "framework/doctest.h"
-#include "minispdlog/minispdlog.h"
 #include "framework/mock_sink.h"
-#include <thread>
+#include "framework/test_fixture.h"
+#include "minispdlog/minispdlog.h"
+
 #include <chrono>
+#include <fstream>
+#include <iterator>
+#include <thread>
 
 using namespace minispdlog;
 using minispdlog::tests::mock_sink_mt;
@@ -144,6 +148,27 @@ TEST_CASE("null_mutex has no overhead [sink]") {
     nm.lock();
     nm.unlock();  // 不应崩溃、不应有副作用
     REQUIRE(true);
+}
+
+TEST_CASE("null_sink formats into a byte counter [sink]") {
+    auto sink = std::make_shared<sinks::null_sink_st>();
+    sink->set_pattern("%v");
+    sink->log(details::log_msg("n", level::info, "hello"));
+    REQUIRE(sink->bytes_written() == 6);
+}
+
+TEST_CASE("file_sink writes LF text [sink][file]") {
+    tests::test_fixture fx;
+    const auto path = fx.temp_path("file.log").string();
+    auto sink = std::make_shared<sinks::file_sink_st>(path, true);
+    sink->set_pattern("%v");
+    sink->log(details::log_msg("f", level::info, "line"));
+    sink->flush();
+
+    std::ifstream in(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    REQUIRE(text == "line\n");
+    REQUIRE(text.find('\r') == std::string::npos);
 }
 
 TEST_CASE("file_sink throws on invalid path [sink][file]") {

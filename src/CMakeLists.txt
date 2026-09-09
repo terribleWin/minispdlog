@@ -9,6 +9,8 @@ set(MINISPDLOG_SOURCES
     formatter.cpp
     rotating_file_sink.cpp
     daily_file_sink.cpp
+    json_formatter.cpp
+    details/durable_file.cpp
 )
 
 # 创建静态库

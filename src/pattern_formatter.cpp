@@ -1,10 +1,8 @@
 #include "minispdlog/pattern_formatter.h"
-#include "minispdlog/details/utils.h"
+#include "minispdlog/details/datetime.h"
 
-#include <chrono>
 #include <cstring>
 
-// flag_formatter 对各个占位符的处理
 namespace minispdlog {
 namespace {
 
@@ -28,18 +26,11 @@ const char* basename(const char* path) {
     return base;
 }
 
-template <typename Duration>
-int subsec_of_current_second(const log_clock::time_point& tp) {
-    const auto duration = tp.time_since_epoch();
-    const auto secs = std::chrono::duration_cast<std::chrono::seconds>(duration);
-    return static_cast<int>(std::chrono::duration_cast<Duration>(duration - secs).count());
-}
-
 class raw_string_formatter : public pattern_formatter::flag_formatter {
 public:
     explicit raw_string_formatter(std::string str)
         : str_(std::move(str)) {}
-    void format(const details::log_msg& /*msg*/, const std::tm& /*ctm_time*/,
+    void format(const details::log_msg&, const details::wall_clock_cache&,
                 fmt::memory_buffer& dest) override {
         dest.append(str_.data(), str_.data() + str_.size());
     }
@@ -53,8 +44,9 @@ private:
 
 class year_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg&, const std::tm& ctm_time, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{:04d}", ctm_time.tm_year + 1900);
+    void format(const details::log_msg&, const details::wall_clock_cache& clock,
+                fmt::memory_buffer& dest) override {
+        details::append_raw(dest, clock.ymd_hms, 4);
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<year_formatter>();
@@ -63,8 +55,9 @@ public:
 
 class month_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg&, const std::tm& ctm_time, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{:02d}", ctm_time.tm_mon + 1);
+    void format(const details::log_msg&, const details::wall_clock_cache& clock,
+                fmt::memory_buffer& dest) override {
+        details::append_raw(dest, clock.ymd_hms + 5, 2);
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<month_formatter>();
@@ -73,8 +66,9 @@ public:
 
 class day_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg&, const std::tm& ctm_time, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{:02d}", ctm_time.tm_mday);
+    void format(const details::log_msg&, const details::wall_clock_cache& clock,
+                fmt::memory_buffer& dest) override {
+        details::append_raw(dest, clock.ymd_hms + 8, 2);
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<day_formatter>();
@@ -83,8 +77,9 @@ public:
 
 class hour_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg&, const std::tm& ctm_time, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{:02d}", ctm_time.tm_hour);
+    void format(const details::log_msg&, const details::wall_clock_cache& clock,
+                fmt::memory_buffer& dest) override {
+        details::append_raw(dest, clock.ymd_hms + 11, 2);
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<hour_formatter>();
@@ -93,8 +88,9 @@ public:
 
 class minute_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg&, const std::tm& ctm_time, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{:02d}", ctm_time.tm_min);
+    void format(const details::log_msg&, const details::wall_clock_cache& clock,
+                fmt::memory_buffer& dest) override {
+        details::append_raw(dest, clock.ymd_hms + 14, 2);
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<minute_formatter>();
@@ -103,42 +99,41 @@ public:
 
 class second_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg&, const std::tm& ctm_time, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{:02d}", ctm_time.tm_sec);
+    void format(const details::log_msg&, const details::wall_clock_cache& clock,
+                fmt::memory_buffer& dest) override {
+        details::append_raw(dest, clock.ymd_hms + 17, 2);
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<second_formatter>();
     }
 };
 
-// %e 毫秒 000-999
 class millis_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{:03d}",
-                       subsec_of_current_second<std::chrono::milliseconds>(msg.time));
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
+        details::append_padded3(dest, details::millis_of_second(msg.time));
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<millis_formatter>();
     }
 };
 
-// %f 微秒 000000-999999
 class micros_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{:06d}",
-                       subsec_of_current_second<std::chrono::microseconds>(msg.time));
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
+        details::append_padded6(dest, details::micros_of_second(msg.time));
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<micros_formatter>();
     }
 };
 
-// %l 短级别名
 class level_short_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         append_str(dest, level_to_short_string(msg.lvl));
     }
     std::unique_ptr<flag_formatter> clone() const override {
@@ -146,10 +141,10 @@ public:
     }
 };
 
-// %L 全级别名
 class level_full_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         append_str(dest, level_to_string(msg.lvl));
     }
     std::unique_ptr<flag_formatter> clone() const override {
@@ -159,7 +154,8 @@ public:
 
 class logger_name_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         dest.append(msg.logger_name.data(), msg.logger_name.data() + msg.logger_name.size());
     }
     std::unique_ptr<flag_formatter> clone() const override {
@@ -169,7 +165,8 @@ public:
 
 class pay_load : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         dest.append(msg.payload.data(), msg.payload.data() + msg.payload.size());
     }
     std::unique_ptr<flag_formatter> clone() const override {
@@ -179,29 +176,30 @@ public:
 
 class thread_id_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{}", msg.thread_id);
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
+        details::append_uint64(dest, static_cast<std::uint64_t>(msg.thread_id));
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<thread_id_formatter>();
     }
 };
 
-// %P 进程号
 class pid_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
-        fmt::format_to(std::back_inserter(dest), "{}", msg.process_id);
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
+        details::append_uint64(dest, static_cast<std::uint64_t>(msg.process_id));
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<pid_formatter>();
     }
 };
 
-// %s 源文件名（basename）
 class source_filename_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         if (msg.source.empty()) {
             return;
         }
@@ -212,10 +210,10 @@ public:
     }
 };
 
-// %g 源文件路径
 class source_path_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         if (msg.source.empty()) {
             return;
         }
@@ -226,24 +224,24 @@ public:
     }
 };
 
-// %# 源码行号
 class source_line_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         if (msg.source.empty()) {
             return;
         }
-        fmt::format_to(std::back_inserter(dest), "{}", msg.source.line);
+        details::append_int64(dest, static_cast<std::int64_t>(msg.source.line));
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<source_line_formatter>();
     }
 };
 
-// %! 源码函数名
 class source_func_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         if (msg.source.empty()) {
             return;
         }
@@ -254,25 +252,26 @@ public:
     }
 };
 
-// %@ basename:line
 class source_location_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         if (msg.source.empty()) {
             return;
         }
-        fmt::format_to(std::back_inserter(dest), "{}:{}", basename(msg.source.filename),
-                       msg.source.line);
+        append_str(dest, basename(msg.source.filename));
+        dest.push_back(':');
+        details::append_int64(dest, static_cast<std::int64_t>(msg.source.line));
     }
     std::unique_ptr<flag_formatter> clone() const override {
         return std::make_unique<source_location_formatter>();
     }
 };
 
-// %^ start of the color span (no output)
 class color_start_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         msg.color_range_start = dest.size();
     }
     std::unique_ptr<flag_formatter> clone() const override {
@@ -280,10 +279,10 @@ public:
     }
 };
 
-// %$ end of the color span (no output)
 class color_stop_formatter : public pattern_formatter::flag_formatter {
 public:
-    void format(const details::log_msg& msg, const std::tm&, fmt::memory_buffer& dest) override {
+    void format(const details::log_msg& msg, const details::wall_clock_cache&,
+                fmt::memory_buffer& dest) override {
         msg.color_range_end = dest.size();
     }
     std::unique_ptr<flag_formatter> clone() const override {
@@ -291,7 +290,7 @@ public:
     }
 };
 
-}  // namespace
+} // namespace
 
 pattern_formatter::pattern_formatter(std::string pattern)
     : pattern_(std::move(pattern)) {
@@ -301,13 +300,11 @@ pattern_formatter::pattern_formatter(std::string pattern)
 void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& dest) {
     msg.color_range_start = 0;
     msg.color_range_end = 0;
-    auto secs = std::chrono::duration_cast<std::chrono::seconds>(msg.time.time_since_epoch());
-    if (secs != last_log_secs_) {
-        cached_tm_ = get_time(msg);
-        last_log_secs_ = secs;
+    if (needs_calendar_) {
+        clock_.refresh(msg.time);
     }
     for (const auto& formatter : formatters_) {
-        formatter->format(msg, cached_tm_, dest);
+        formatter->format(msg, clock_, dest);
     }
     dest.push_back('\n');
 }
@@ -319,6 +316,7 @@ std::unique_ptr<formatter> pattern_formatter::clone() const {
 void pattern_formatter::set_pattern(std::string pattern) {
     pattern_ = std::move(pattern);
     formatters_.clear();
+    needs_calendar_ = false;
     compile_pattern();
 }
 
@@ -333,21 +331,27 @@ void pattern_formatter::compile_pattern() {
             char flag = pattern_[++i];
             switch (flag) {
                 case 'Y':
+                    needs_calendar_ = true;
                     formatters_.push_back(std::make_unique<year_formatter>());
                     break;
                 case 'm':
+                    needs_calendar_ = true;
                     formatters_.push_back(std::make_unique<month_formatter>());
                     break;
                 case 'd':
+                    needs_calendar_ = true;
                     formatters_.push_back(std::make_unique<day_formatter>());
                     break;
                 case 'H':
+                    needs_calendar_ = true;
                     formatters_.push_back(std::make_unique<hour_formatter>());
                     break;
                 case 'M':
+                    needs_calendar_ = true;
                     formatters_.push_back(std::make_unique<minute_formatter>());
                     break;
                 case 'S':
+                    needs_calendar_ = true;
                     formatters_.push_back(std::make_unique<second_formatter>());
                     break;
                 case 'e':
@@ -412,15 +416,4 @@ void pattern_formatter::compile_pattern() {
     }
 }
 
-std::tm pattern_formatter::get_time(const details::log_msg& msg) {
-    auto time_t = std::chrono::system_clock::to_time_t(msg.time);
-    std::tm tm_time{};
-#ifdef _WIN32
-    localtime_s(&tm_time, &time_t);
-#else
-    localtime_r(&time_t, &tm_time);
-#endif
-    return tm_time;
-}
-
-}  // namespace minispdlog
+} // namespace minispdlog

@@ -26,6 +26,8 @@ set(UNIT_TEST_SOURCES
     unit/test_callback_sink.cpp
     unit/test_daily_file.cpp
     unit/test_rotating_file.cpp
+    unit/test_json.cpp
+    unit/test_buffered_file.cpp
     unit/test_qt_sink.cpp
 )
 

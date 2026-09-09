@@ -4,6 +4,7 @@
 #include "minispdlog/async.h"
 #include "minispdlog/minispdlog.h"
 
+#include <chrono>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -278,5 +279,124 @@ TEST_CASE("init_lockfree_thread_pool wires global pool [async][lockfree][factory
     lg->info("hello lockfree async");
     lg->flush();
     REQUIRE(mock->message_count() >= 1);
+    shutdown();
+}
+
+TEST_CASE("async payload shorter than inline slot is delivered intact [async]") {
+    shutdown();
+    init_thread_pool(1024, 1);
+    auto mock = std::make_shared<mock_sink_mt>();
+    mock->set_pattern("%n %v");
+    auto lg = std::make_shared<async_logger>("short", std::vector<sinks::sink_ptr>{mock});
+    lg->info("hi");
+    lg->flush();
+    REQUIRE(mock->message_count() == 1);
+    REQUIRE(mock->at(0) == "short hi\n");
+    shutdown();
+}
+
+TEST_CASE("async payload larger than inline slot is delivered intact [async]") {
+    shutdown();
+    init_thread_pool(1024, 1);
+    auto mock = std::make_shared<mock_sink_mt>();
+    mock->set_pattern("%v");
+    auto lg = std::make_shared<async_logger>("long", std::vector<sinks::sink_ptr>{mock});
+    const std::string payload(200, 'x');
+    lg->info("{}", payload);
+    lg->flush();
+    REQUIRE(mock->message_count() == 1);
+    REQUIRE(mock->at(0) == payload + "\n");
+    shutdown();
+}
+
+TEST_CASE("async_logger destructor drains without an explicit flush [async]") {
+    shutdown();
+    init_thread_pool(1024, 1);
+    auto mock = std::make_shared<mock_sink_mt>();
+    mock->set_pattern("%v");
+    {
+        auto lg = std::make_shared<async_logger>("dtor", std::vector<sinks::sink_ptr>{mock});
+        lg->info("from-dtor");
+        lg.reset();
+    }
+    REQUIRE(mock->message_count() == 1);
+    REQUIRE(mock->at(0) == "from-dtor\n");
+    shutdown();
+}
+
+namespace {
+
+bool wait_for_count(const std::shared_ptr<mock_sink_mt>& mock, std::size_t n,
+                    std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (mock->message_count() < n) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
+void require_wake_interval_delivery(async_queue_type queue_type) {
+    thread_pool_options opts;
+    opts.queue_size = 1024;
+    opts.thread_count = 1;
+    opts.queue_type = queue_type;
+    opts.wake_batch = 100000;
+    opts.wake_interval_us = 100;
+
+    auto mock = std::make_shared<mock_sink_mt>();
+    details::thread_pool pool(opts);
+    auto lg = std::make_shared<logger>("wake", mock);
+    details::log_msg msg("wake", level::info, "no-flush");
+    pool.post_log(lg, msg);
+
+    REQUIRE(wait_for_count(mock, 1, std::chrono::milliseconds(50)));
+    REQUIRE(mock->last_contains("no-flush"));
+}
+
+}  // namespace
+
+TEST_CASE("blocking pool delivers a log without flush via N/T wake [async][wake]") {
+    require_wake_interval_delivery(async_queue_type::blocking);
+}
+
+TEST_CASE("lockfree pool delivers a log without flush via N/T wake [async][wake][lockfree]") {
+    require_wake_interval_delivery(async_queue_type::lockfree);
+}
+
+TEST_CASE("blocking pool delivers a short burst without flush [async][wake]") {
+    thread_pool_options opts;
+    opts.queue_size = 1024;
+    opts.thread_count = 1;
+    opts.wake_batch = 64;
+    opts.wake_interval_us = 100;
+
+    auto mock = std::make_shared<mock_sink_mt>();
+    details::thread_pool pool(opts);
+    auto lg = std::make_shared<logger>("burst", mock);
+    const int n = 3;
+    for (int i = 0; i < n; ++i) {
+        details::log_msg msg("burst", level::info, "b");
+        pool.post_log(lg, msg);
+    }
+    REQUIRE(wait_for_count(mock, static_cast<std::size_t>(n), std::chrono::milliseconds(50)));
+}
+
+TEST_CASE("init_thread_pool options keep wake_batch [async][wake][factory]") {
+    shutdown();
+    thread_pool_options opts;
+    opts.queue_size = 1024;
+    opts.thread_count = 1;
+    opts.wake_batch = 32;
+    opts.wake_interval_us = 50;
+    init_thread_pool(opts);
+
+    auto mock = std::make_shared<mock_sink_mt>();
+    auto lg = std::make_shared<async_logger>("opts", std::vector<sinks::sink_ptr>{mock});
+    lg->info("via-opts");
+    REQUIRE(wait_for_count(mock, 1, std::chrono::milliseconds(50)));
+    lg->flush();
     shutdown();
 }

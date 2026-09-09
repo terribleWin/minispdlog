@@ -1,8 +1,9 @@
 #pragma once
 
 #include "base_sink.h"
+
 #include <array>
-#include <iostream>
+#include <cstdio>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -20,14 +21,10 @@ namespace color {
     constexpr const char* cyan = "\033[36m";
 }
 
-// Paint [color_range_start, color_range_end) when the formatter set a span;
-// otherwise color the whole formatted line.
-inline void write_colored(std::ostream& out, const details::log_msg& msg,
-                          const fmt::memory_buffer& formatted, const std::string& color_code) {
-    const char* data = formatted.data();
-    const auto size = formatted.size();
-    auto start = msg.color_range_start;
-    auto end = msg.color_range_end;
+template <typename WriteBytes, typename WriteCstr>
+inline void write_colored_range(const char* data, size_t size, size_t start, size_t end,
+                                const std::string& color_code, WriteBytes&& write_bytes,
+                                WriteCstr&& write_cstr) {
     if (start > size) {
         start = size;
     }
@@ -35,23 +32,41 @@ inline void write_colored(std::ostream& out, const details::log_msg& msg,
         end = size;
     }
 
-    auto write_range = [&](size_t from, size_t to) {
+    auto write_span = [&](size_t from, size_t to) {
         if (to > from) {
-            out.write(data + from, static_cast<std::streamsize>(to - from));
+            write_bytes(data + from, to - from);
         }
     };
 
     if (end > start) {
-        write_range(0, start);
-        out << color_code;
-        write_range(start, end);
-        out << color::reset;
-        write_range(end, size);
+        write_span(0, start);
+        write_cstr(color_code.c_str());
+        write_span(start, end);
+        write_cstr(color::reset);
+        write_span(end, size);
     } else {
-        out << color_code;
-        write_range(0, size);
-        out << color::reset;
+        write_cstr(color_code.c_str());
+        write_span(0, size);
+        write_cstr(color::reset);
     }
+}
+
+// Paint [color_range_start, color_range_end) when the formatter set a span;
+// otherwise color the whole formatted line.
+inline void write_colored(std::ostream& out, const details::log_msg& msg,
+                          const fmt::memory_buffer& formatted, const std::string& color_code) {
+    write_colored_range(
+        formatted.data(), formatted.size(), msg.color_range_start, msg.color_range_end, color_code,
+        [&](const char* ptr, size_t n) { out.write(ptr, static_cast<std::streamsize>(n)); },
+        [&](const char* text) { out << text; });
+}
+
+inline void write_colored(std::FILE* out, const details::log_msg& msg,
+                          const fmt::memory_buffer& formatted, const std::string& color_code) {
+    write_colored_range(
+        formatted.data(), formatted.size(), msg.color_range_start, msg.color_range_end, color_code,
+        [&](const char* ptr, size_t n) { std::fwrite(ptr, 1, n, out); },
+        [&](const char* text) { std::fputs(text, out); });
 }
 
 template <typename ConsoleMutex>
@@ -71,9 +86,9 @@ protected:
     void sink_it_(const details::log_msg& msg) override {
         fmt::memory_buffer formatted;
         this->format_message(msg, formatted);
-        write_colored(std::cout, msg, formatted, colors_[static_cast<int>(msg.lvl)]);
+        write_colored(stdout, msg, formatted, colors_[static_cast<int>(msg.lvl)]);
     }
-    void flush_() override { std::cout << std::flush; }
+    void flush_() override { std::fflush(stdout); }
 
 private:
     std::array<std::string, 7> colors_;
@@ -98,9 +113,9 @@ protected:
     void sink_it_(const details::log_msg& msg) override {
         fmt::memory_buffer formatted;
         this->format_message(msg, formatted);
-        write_colored(std::cerr, msg, formatted, colors_[static_cast<int>(msg.lvl)]);
+        write_colored(stderr, msg, formatted, colors_[static_cast<int>(msg.lvl)]);
     }
-    void flush_() override { std::cerr << std::flush; }
+    void flush_() override { std::fflush(stderr); }
 
 private:
     std::array<std::string, 7> colors_;

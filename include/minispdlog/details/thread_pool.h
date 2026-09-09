@@ -7,7 +7,11 @@
 #include "mpsc_queue.h"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -20,17 +24,37 @@ public:
 
     thread_pool(std::size_t queue_size, std::size_t threads_n,
                 async_queue_type queue_type = async_queue_type::blocking);
+    explicit thread_pool(const thread_pool_options& opts);
 
     thread_pool(const thread_pool&) = delete;
     thread_pool& operator=(const thread_pool&) = delete;
     ~thread_pool();
 
+    // Stop workers and join. Idempotent; also called from the destructor.
+    void shutdown();
+    [[nodiscard]] bool active() const noexcept {
+        return !shutting_down_.load(std::memory_order_acquire);
+    }
+
+    // Hot path: raw logger pointer, no shared_ptr bump. Caller must keep the
+    // logger alive until queued records are processed (async_logger does this
+    // in its destructor).
+    void post_log(logger* worker, const log_msg& msg,
+                  async_overflow_policy policy = async_overflow_policy::block);
     void post_log(std::shared_ptr<logger>&& logger_ptr, const log_msg& msg,
                   async_overflow_policy policy = async_overflow_policy::block);
+    void post_log(const std::shared_ptr<logger>& logger_ptr, const log_msg& msg,
+                  async_overflow_policy policy = async_overflow_policy::block) {
+        post_log(std::shared_ptr<logger>(logger_ptr), msg, policy);
+    }
+    void post_log_nowait(logger* worker, const log_msg& msg);
     void post_log_nowait(std::shared_ptr<logger>&& logger_ptr, const log_msg& msg);
-    // If wait is true, blocks until queued logs are written (including in-flight
-    // records on other workers).
+
+    void post_flush(logger* worker, bool wait = false);
     void post_flush(std::shared_ptr<logger>&& logger_ptr, bool wait = false);
+    void post_flush(const std::shared_ptr<logger>& logger_ptr, bool wait = false) {
+        post_flush(std::shared_ptr<logger>(logger_ptr), wait);
+    }
 
     [[nodiscard]] std::size_t overrun_count() const;
     [[nodiscard]] std::size_t discard_count() const;
@@ -41,17 +65,34 @@ private:
     void worker_loop_blocking_();
     void worker_loop_lockfree_();
     bool process_msg_(async_msg& incoming);
-    [[nodiscard]] bool enqueue_blocking_(async_msg&& msg, async_overflow_policy policy);
+    void enqueue_log_(async_msg&& msg, async_overflow_policy policy);
+    [[nodiscard]] bool enqueue_blocking_(async_msg&& msg, async_overflow_policy policy,
+                                         bool notify);
     [[nodiscard]] bool enqueue_lockfree_(async_msg&& msg, async_overflow_policy policy);
+    void maybe_wake_log_() noexcept;
+    void force_wake_() noexcept;
+    void force_wake_all_() noexcept;
     void notify_consumer_() noexcept;
     void on_log_completed_() noexcept;
     void wait_for_pending_logs_() noexcept;
+    [[nodiscard]] static std::uint64_t now_ns_() noexcept;
 
     async_queue_type queue_type_;
+    std::size_t worker_count_{1};
+    std::size_t wake_batch_{64};
+    std::chrono::microseconds wake_interval_{100};
+    std::uint64_t wake_interval_ns_{100000};
+
     std::unique_ptr<mpmc_blocking_queue<item_type>> blocking_q_;
     std::unique_ptr<mpsc_queue<item_type>> lockfree_q_;
 
-    alignas(64) std::atomic<std::size_t> notify_seq_{0};
+    std::mutex park_mu_;
+    std::condition_variable park_cv_;
+    std::atomic<std::uint64_t> park_seq_{0};
+    std::atomic<std::size_t> idle_workers_{0};
+    std::atomic<std::size_t> unnotified_{0};
+    std::atomic<std::uint64_t> batch_start_ns_{0};
+
     std::atomic<bool> shutting_down_{false};
     std::atomic<std::size_t> discard_count_{0};
     std::atomic<std::size_t> pending_logs_{0};

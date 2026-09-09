@@ -1,10 +1,19 @@
 #pragma once
 
+#include <cstdio>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 #include <random>
 #include <thread>
 #include <chrono>
+
+#ifdef _WIN32
+#include <io.h>
+#include <share.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace minispdlog::tests {
 
@@ -62,6 +71,63 @@ public:
 
 private:
     std::filesystem::path temp_dir_;
+};
+
+/**
+ * Redirect a C stdio stream (stdout/stderr) to a file for the object's lifetime.
+ * Needed because console sinks write with fwrite, not iostream rdbuf.
+ */
+class stdio_redirect {
+public:
+    stdio_redirect(std::FILE* stream, std::filesystem::path path)
+        : stream_(stream), path_(std::move(path)) {
+        std::fflush(stream_);
+#ifdef _WIN32
+        saved_fd_ = _dup(_fileno(stream_));
+        file_ = _fsopen(path_.string().c_str(), "wb+", _SH_DENYNO);
+        if (file_ == nullptr) {
+            throw std::runtime_error("stdio_redirect: failed to open " + path_.string());
+        }
+        _dup2(_fileno(file_), _fileno(stream_));
+#else
+        saved_fd_ = ::dup(::fileno(stream_));
+        file_ = std::fopen(path_.string().c_str(), "wb+");
+        if (file_ == nullptr) {
+            throw std::runtime_error("stdio_redirect: failed to open " + path_.string());
+        }
+        ::dup2(::fileno(file_), ::fileno(stream_));
+#endif
+    }
+
+    ~stdio_redirect() {
+        if (stream_ != nullptr) {
+            std::fflush(stream_);
+        }
+        if (saved_fd_ >= 0) {
+#ifdef _WIN32
+            _dup2(saved_fd_, _fileno(stream_));
+            _close(saved_fd_);
+#else
+            ::dup2(saved_fd_, ::fileno(stream_));
+            ::close(saved_fd_);
+#endif
+        }
+        if (file_ != nullptr) {
+            std::fclose(file_);
+            file_ = nullptr;
+        }
+    }
+
+    stdio_redirect(const stdio_redirect&) = delete;
+    stdio_redirect& operator=(const stdio_redirect&) = delete;
+
+    const std::filesystem::path& path() const { return path_; }
+
+private:
+    std::FILE* stream_{nullptr};
+    std::filesystem::path path_;
+    std::FILE* file_{nullptr};
+    int saved_fd_{-1};
 };
 
 /**

@@ -1,12 +1,12 @@
 #pragma once
 #include "common.h"
-#include "level.h"
+#include "details/datetime.h"
 #include "formatter.h"
-#include <vector>
-#include <string>
+#include "level.h"
+
 #include <memory>
-#include <chrono>
-#include <ctime>
+#include <string>
+#include <vector>
 
 namespace minispdlog {
 /**
@@ -36,17 +36,16 @@ namespace minispdlog {
                 public:
                     virtual ~flag_formatter() = default;
                     virtual void format(const details::log_msg& msg,
-                                        const std::tm& ctm_time,
+                                        const details::wall_clock_cache& clock,
                                        fmt::memory_buffer& dest) = 0;
                     virtual std::unique_ptr<flag_formatter> clone() const = 0;
             };
         
         private:
             void compile_pattern();
-            std::tm get_time(const details::log_msg& msg);
             std::string pattern_;
             std::vector<std::unique_ptr<flag_formatter>> formatters_;
-            std::chrono::seconds last_log_secs_{0};
-            std::tm cached_tm_{};
+            details::wall_clock_cache clock_{};
+            bool needs_calendar_{false};
     };
 }

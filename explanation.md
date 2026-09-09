@@ -28,11 +28,11 @@
 
 | 能力 | 含义 |
 |------|------|
-| 同步日志 | 调用线程完成「用户内容格式化 → pattern 拼行 → 写 Sink」 |
-| 异步日志 | 业务线程只入队；工作线程池消费并写 I/O，业务与磁盘解耦 |
-| 多 Sink | 一个 logger 可同时写控制台、文件、滚动文件、回调、可选 Qt 控件等 |
-| 可扩展 | 虚接口 `sink` / `formatter`，按需增加输出目标与行格式 |
-| 工程化 | Registry 管理生命周期、doctest 单测、可选 Benchmark、ASan/TSan CI |
+| 同步日志 | 调用线程完成「用户内容格式化 → formatter 拼行 → 写 Sink」 |
+| 异步日志 | 业务线程只入队；工作线程走 `backend_sink_it_` 写 I/O，业务与磁盘解耦 |
+| 多 Sink | 一个 logger 可同时写控制台、文件、滚动/按天文件、JSON Lines、回调、可选 Qt |
+| 可扩展 | 虚接口 `sink` / `formatter`；文本用 `pattern_formatter`，结构化用 `json_formatter` |
+| 工程化 | Registry、`shutdown()`、doctest、可选 Benchmark、CI lint + ASan/TSan |
 
 用户侧通常只需要：
 
@@ -62,7 +62,7 @@ minispdlog::info("Hello, {}!", "World");
 | GUI（可选） | **Qt5/Qt6 Widgets** | `qt_sink` + `QMetaObject::invokeMethod` |
 | 单元测试 | **doctest**（header-only，`tests/framework/`） | 单入口 `minispdlog_tests` + 标签过滤 |
 | 性能 | **Google Benchmark**（可选系统包） | `benchmark_async` / `benchmark_queue` |
-| CI | GitHub Actions | Release / RelASan / RelTSan + ctest |
+| CI | GitHub Actions | lint + g++/clang × Release/ASan/TSan + Windows MSVC + coverage |
 | Qt 安装 | **aqtinstall** 脚本 | `scripts/setup_qt.sh` / `.ps1` → `third_party/qt`（不提交 SDK） |
 
 ---
@@ -105,14 +105,14 @@ minispdlog::info("Hello, {}!", "World");
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ ① 用户 API 层                                                            │
 │    minispdlog.h / async.h（工厂与 init_*）                                │
-│    全局 info/warn、stdout_color_mt、async_file_mt、MINISPDLOG_* 宏         │
+│    全局 info/warn、工厂（含 daily/json/async_*）、MINISPDLOG_* 宏           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ② 管理调度层                                                              │
 │    registry · async_logger · thread_pool · 队列（blocking / lockfree）     │
 │    「注册表 + 异步投递」；不负责拼最终输出行                               │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ③ 格式化 / 输出层                                                         │
-│    logger · sink/base_sink · 各具体 Sink · pattern_formatter               │
+│    logger · sink/base_sink · 各具体 Sink · pattern_formatter / json_formatter │
 │    级别过滤、fmt payload、按 sinks_ 写出；同步路径的主战场                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ④ 基础设施层                                                              │
@@ -124,8 +124,8 @@ minispdlog::info("Hello, {}!", "World");
 | 层 | 负责 | **不**负责 | 关键路径 |
 |----|------|-----------|----------|
 | ① 用户 API | 默认 logger、工厂、全局函数、编译期宏 | 队列实现、Sink 细节 | `minispdlog.h`、`async.h` |
-| ② 管理调度 | 注册/查找 logger；异步入队与 worker 调度；溢出策略 | pattern 拼行、具体 I/O | `registry.*`、`async.h`、`thread_pool.*`、`mpmc_blocking_q.h`、`mpsc_queue.h` |
-| ③ 格式化/输出 | `should_log`、fmt、遍历 Sink、formatter | 全局命名表、线程池生命周期 | `logger.*`、`sinks/*`、`pattern_formatter.*` |
+| ② 管理调度 | 注册/查找 logger；异步入队与 worker 调度；溢出策略 | 拼最终输出行、具体 I/O | `registry.*`、`async.h`、`thread_pool.*`、`mpmc_blocking_q.h`、`mpsc_queue.h` |
+| ③ 格式化/输出 | `should_log`、fmt、遍历 Sink、formatter | 全局命名表、线程池生命周期 | `logger.*`、`sinks/*`、`pattern_formatter.*`、`json_formatter.*` |
 | ④ 基础设施 | `level` 语义、`log_msg` 字段、时间/线程 id 工具、fmt | 业务 API、异步策略 | `level.h`、`details/log_msg.h`、`async_msg.h`、`common.h` |
 
 易混点（面试常问）：
@@ -142,18 +142,18 @@ minispdlog::info("Hello, {}!", "World");
 
 ```
 info("x") → API/默认 logger
-         → logger::log          【③】级别过滤 + fmt 用户串 → 造 log_msg【④】
-         → logger::sink_it_     【③】
-         → Sink::log → pattern  【③】写出
+         → logger::log          【③】级别过滤 + fmt 用户串 → 造 log_msg【④】（含 source_loc）
+         → logger::sink_it_     【③】= backend_sink_it_：快照 sinks_，各 Sink::log
+         → Sink::log → formatter【③】写出（pattern 或 JSON）
 ```
 
 **异步**（`async_logger` + 已 `init_thread_pool` / `init_lockfree_thread_pool`）：
 
 ```
-info("x") → logger::log                 【③】过滤 + fmt（仍在业务线程）
+info("x") → logger::log                 【③】过滤 + fmt（仍在业务线程；sourced_fmt 已带 loc）
          → async_logger::sink_it_       【②】打包 async_msg，入队
          → thread_pool worker           【②】出队
-         → logger::backend_sink_it_     【③】写 Sink（不再入队）
+         → logger::backend_sink_it_     【③】写 Sink（禁止再走虚 sink_it_，否则会再次入队）
 ```
 
 | | 同步 | 异步 |
@@ -173,13 +173,13 @@ info("x") → logger::log                 【③】过滤 + fmt（仍在业务�
               │ shared_ptr<logger>
               ▼
      ┌── ③ logger / async_logger ──┐
-     │  name_ / level_ / sinks_[]  │
+     │  name_ / atomic level_ / COW sinks_ │
      └────────────┬────────────────┘
                   │ sink_ptr
      ┌────────────┼────────────┐
      ▼            ▼            ▼
-  console_*    file_*     callback / qt_* …   【③】
-     └──── base_sink<Mutex> ──► formatter ────┘
+  console / file / rotating / daily / json / callback / qt_*   【③】
+     └──── base_sink<Mutex> ──► formatter（pattern 或 json） ──┘
 
 异步仅改投递（②），目的地仍在 logger.sinks_（③）：
   async_logger::sink_it_
@@ -200,6 +200,7 @@ info("x") → logger::log                 【③】过滤 + fmt（仍在业务�
 | `include/minispdlog/*.h` | ① 及部分 ②/③ 对外接口 |
 | `include/minispdlog/details/` | ② 队列/线程池、④ 消息与工具（内部） |
 | `include/minispdlog/sinks/` | ③ 输出插件 |
+| `include/minispdlog/json_formatter.h` / `pattern_formatter.h` | ③ 行格式（JSON Lines / 文本 pattern） |
 | `include/minispdlog/lockfree_queue.h` | ②/对外：无锁队列便捷入口 |
 | `src/` | 上述实现，链成静态库 `minispdlog` |
 | `tests/unit/`、`tests/framework/` | 按组件测各层行为 |
@@ -214,7 +215,7 @@ info("x") → logger::log                 【③】过滤 + fmt（仍在业务�
 
 | 类型 | 文件 | 角色 |
 |------|------|------|
-| `log_msg` | `details/log_msg.h` | **同步与异步共用**的日志内容载体：级别、时间、线程 id、logger 名、payload 等 |
+| `log_msg` | `details/log_msg.h` | **同步与异步共用**载体：级别、时间、tid/pid、logger 名、payload、`source_loc`、`color_range_*` |
 | `async_msg` | `details/async_msg.h` | 继承 `log_msg_buffer`（再继承 `log_msg`），增加 `msg_type` 与 `worker_ptr`，专供**队列传递** |
 
 ```
@@ -231,21 +232,25 @@ log_msg  ←  log_msg_buffer（深拷贝 payload → std::string）  ←  async_
 | 阶段 | 何时 | 做什么 |
 |------|------|--------|
 | ① fmt 用户内容 | 业务线程 `logger::log` | `"User {}"` + `"Alice"` → `"User Alice logged in"` |
-| ② pattern 整行 | Sink 写出时 | 加上时间、级别等 → `[2026-…] [info] User Alice…` |
+| ② 整行 formatter | Sink 写出时 | **pattern**：时间/级别等拼成文本行；**json**：一行一个对象 |
 
-异步入队时：① 已完成，且已采样 `time` / `thread_id` / `lvl`；② 在工作线程的 Sink 上做。  
+`info()` / `log()` 通过 `sourced_fmt` 在调用点填入 `source_loc`（file/line/func）。宏路径用 `MINISPDLOG_LOC`。
+
+异步入队时：① 已完成，且已采样 `time` / `thread_id` / `process_id` / `lvl` / `source`；② 在工作线程的 Sink 上做。  
 这样时间戳反映「调用点」，且避免把临时参数跨线程传递。
+
+默认文本 pattern：`[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] %v`。`%^` / `%$` 不输出字符，只写入 `log_msg::color_range_start/end`。
 
 ### 4.3 同步调用链
 
 ```
-logger->info("User {} logged in", "Alice")
+logger->info("User {} logged in", "Alice")   // sourced_fmt 捕获调用点
   → logger::log（logger.h）
        should_log → fmt::format_to → 构造 log_msg → sink_it_
-  → logger::sink_it_（logger.cpp）：遍历 sinks_
+  → logger::sink_it_ = backend_sink_it_（logger.cpp）：atomic 快照 sinks_
   → base_sink::log：lock_guard → 子类 sink_it_
-  → 例如 console_sink：format_message → cout.write
-  → pattern_formatter::format
+  → 例如 color_console_sink：format_message → write_colored（按 color_range 上色）
+  → pattern_formatter::format 或 json_formatter::format
 ```
 
 ### 4.4 异步调用链
@@ -253,11 +258,11 @@ logger->info("User {} logged in", "Alice")
 ```
 业务线程：同上 logger::log（得到 log_msg）
   → async_logger::sink_it_（async.h）
-  → post_log / post_log_nowait(shared_from_this(), msg)
-  → async_msg 入队（payload 深拷贝 + worker_ptr）
-工作线程：dequeue_for（仅短暂持队列锁）
-  → 解锁后 worker_ptr->sink_it_ → 与同步相同的 Sink/pattern/I/O
-thread_pool 析构：按线程数入队 terminate → join（尽量 drain 队头日志）
+  → post_log(..., overflow_policy)（block / overrun_oldest / discard_new）
+  → async_msg 入队（payload 深拷贝 + worker_ptr；flush 可带 promise ack）
+工作线程：出队后解锁
+  → worker_ptr->backend_sink_it_ → 与同步相同的 Sink / formatter / I/O
+进程退出：minispdlog::shutdown() → flush_all + 停线程池 + drop_all
 ```
 
 使用前需：
@@ -265,6 +270,9 @@ thread_pool 析构：按线程数入队 terminate → join（尽量 drain 队头
 ```cpp
 minispdlog::init_thread_pool(/*queue_size*/ 8192, /*threads*/ 1);
 auto lg = minispdlog::async_file_mt("async", "async.log", false);
+// 或 async_json_file_mt("async", "async.json.log", false);
+lg->info("hello");
+minispdlog::shutdown();
 ```
 
 ### 4.5 环形缓冲与阻塞队列
@@ -280,7 +288,8 @@ auto lg = minispdlog::async_file_mt("async", "async.log", false);
 - 内部持有 `circular_q`，所有访问包在 `mutex_` 下 → **线程安全 MPMC**；
 - 生产：`enqueue`（满则阻塞）/ `enqueue_nowait`（满则覆盖最旧）；
 - 消费：`dequeue_for`（`wait_for`：被唤醒或超时）；
-- 对应策略枚举 `async_overflow_policy`：`block` / `overrun_oldest`。
+- 对应策略枚举 `async_overflow_policy`：`block` / `overrun_oldest` / `discard_new`。
+- 无锁后端只允许 `block` 与 `discard_new`；`overrun_oldest` 会抛异常。
 
 **注意**：「队列槽位预分配」≠ 整条链路零分配；`async_msg` 仍会为 payload 分配 `std::string`。
 
@@ -299,10 +308,14 @@ auto lg = minispdlog::async_file_mt("async", "async.log", false);
 | Sink | 文件 | 说明 |
 |------|------|------|
 | `console_sink` / `stderr_sink` | `console_sink.h` | 标准输出/错误，无颜色 |
-| `color_console_sink` / `color_stderr_sink` | `color_console_sink.h` | ANSI 按级别着色 |
-| `file_sink` | `file_sink.h` | 普通文件 |
+| `color_console_sink` / `color_stderr_sink` | `color_console_sink.h` | 按 `color_range_*` 套 ANSI；默认只涂级别名 |
+| `file_sink` | `file_sink.h` | 普通文件（逐条 `ofstream`） |
+| `buffered_file_sink` | `buffered_file_sink.h` | 双缓冲批量写 + WAL + 半截行 salvage |
 | `rotating_file_sink` | `rotating_file_sink.h` | 按大小滚动 |
-| `callback_sink` | `callback_sink.h` | 回调投递（测 GUI 路径、自定义处理） |
+| `daily_file_sink` | `daily_file_sink.h` | 按天切分 |
+| `json_file_sink` / `json_console_sink` / `json_stderr_sink` | `json_sink.h` | JSON Lines；文件 sink 继承 `buffered_file_sink`（LF） |
+| `json_rotating_file_sink` / `json_daily_file_sink` | `json_sink.h` | 滚动/按天 JSON，锁住 formatter |
+| `callback_sink` | `callback_sink.h` | 业务回调：格式化行和/或完整 `log_msg`；可选 flush 钩子。工厂 `callback_logger_mt/st`、`async_callback_mt` |
 | `qt_sink`（可选） | `qt_sink.h` | 写入 `QTextEdit` / `QPlainTextEdit` |
 | `mock_sink`（测试） | `tests/framework/mock_sink.h` | 内存捕获断言 |
 
@@ -311,20 +324,49 @@ auto lg = minispdlog::async_file_mt("async", "async.log", false);
 ### 5.2 插件扩展方式
 
 1. 继承 `base_sink<Mutex>`，实现 `sink_it_` / `flush_`；  
-2. 或实现虚接口 `formatter`，或配置 `pattern_formatter` 的 pattern（如 `%Y %m %d %H %M %S %l %n %v %t`）。
+2. 或实现虚接口 `formatter`：文本用 `pattern_formatter`（`set_pattern`），结构化用 `json_formatter`（`set_formatter`）；  
+3. 或不写新类：把输出交给 `callback_sink`（单参格式化行，或双参 `log_msg` + 行）。回调在 sink 锁内执行；`log_msg` 的 view 只在回调期间有效。`qt_sink` 是把行投到 Qt 控件的特化。
 
-路线图中还可扩展：按天/小时滚动、JSON、syslog、网络 Sink 等（见 `docs/roadmap_and_testing_framework.md`）。
+`json_*` sink 在构造时安装 `json_formatter`，并覆盖 `set_pattern` / `set_formatter`，避免 `logger->set_pattern` 把结构化输出改回纯文本。任意其它 sink（含 rolling/daily 文本 sink）仍可 `set_formatter(std::make_unique<json_formatter>())`；要滚动仍保持 JSON，用 `json_rotating_file_sink` / `rotating_json_logger_mt`。
+
+路线图中还可扩展：按小时滚动、syslog、网络 Sink 等（见 `docs/roadmap_and_testing_framework.md`）。
 
 ### 5.3 颜色如何实现
 
-- **不是**写在 `log_msg` 里带颜色字段；  
-- 仅在 `color_*_sink` 写出时临时加 ANSI 前缀/后缀（`color_console_sink.h` 中 `color::green` 等）；  
-- 文件 Sink 一般为纯文本。
+着色是 **formatter 标区间 + color sink 涂色**，不是往 payload 里塞 ANSI：
 
-### 5.4 Registry
+1. `pattern_formatter` 遇到 `%^` / `%$` 时把当前已写出长度写入 `log_msg::color_range_start/end`（半开区间）；每次 `format()` 开头先清零。  
+2. `color_console_sink` / `color_stderr_sink` 的 `write_colored` 只给 `[start, end)` 套级别对应的 ANSI；`end <= start` 则整行着色。  
+3. 文件 / JSON sink 不读这两个字段，输出不含颜色码。
+
+默认只给级别名上色：`[%^%L%$]`。
+
+### 5.4 JSON Lines
+
+`json_formatter` 每条日志一行对象，字段：`time`（本地墙钟 `YYYY-MM-DD HH:MM:SS.mmm`，按秒缓存日历部分）、`ts`（Unix epoch 毫秒）、`level`、`logger`、`msg`、`tid`、`pid`；`source` 仅在 `source_loc` 非空时出现。字符串按 RFC 8259 转义。文件类 `json_file_sink` 走 `buffered_file_sink`（批量双缓冲、WAL、LF）。
+
+工厂：`json_logger_mt/st`、`rotating_json_logger_mt/st`、`daily_json_logger_mt/st`、`stdout_json_mt/st`、`stderr_json_mt/st`、`async_json_file_mt`、`async_json_rotating_mt`。`json_logger_*` / `async_json_file_mt` 可传 `batch_config`。
+
+### 5.5 批量写入、双缓冲与崩溃找回
+
+热路径把已格式化的字节追加到 **front** buffer；达到 `batch_config` 的字节/条数/时长阈值（或 `flush()` / 析构）时 **swap**，把 **frozen** 侧一次 `fwrite` 出去。`_mt` 在写 frozen 时放开 sink 锁，生产者可以继续填新的 front。
+
+提交一批时若 `recover==true`，先写 sidecar `日志路径.minispdlog-wal`（magic `MSLG` + 目标偏移 + payload），再写入主文件，成功后删除 WAL。下次打开：
+
+1. 按 WAL 里的 `target_offset` 与主文件当前大小决定：补写、截断半截 fwrite 再补写、或认定已提交只删 WAL（避免重复行）；
+2. 再从文件尾往前找最后一个 `\n`，丢掉半截最后一行。
+
+`durability::fflush` 让已提交批次在进程崩溃后通常仍在内核页缓存里；`fsync` 才抗住整机掉电。未 swap 的 front 只在内存中：`install_crash_flush()` / `dump_buffered_logs()` 会尽力写出（不是 POSIX async-signal-safe）；`kill -9` 和异步队列里尚未出队的消息不在这套机制里。
+
+工厂：`buffered_logger_mt/st`、`async_buffered_file_mt`。
+
+### 5.6 Registry
 
 `registry` 单例用 `unordered_map<string, shared_ptr<logger>>` 管理命名 logger；工厂函数创建后 `register_logger`。  
-全局 `minispdlog::info` 走 `default_logger()`。
+全局 `minispdlog::info` 走 `default_logger()`。  
+`shutdown()`：`flush_all` → 停全局 `thread_pool_manager` → `drop_all`。
+
+logger 的 `sinks_` 是 copy-on-write：`add_sink` / `remove_sink` 持 mutex 发布新 vector；`log` / `flush` 只 `atomic_load` 快照，I/O 期间不持 logger 锁。级别用 `atomic<level>`。
 
 ---
 
@@ -351,8 +393,9 @@ auto lg = minispdlog::async_file_mt("async", "async.log", false);
 
 ### 6.3 编译期
 
-- `if constexpr` + `MINISPDLOG_ACTIVE_LEVEL`：Release 可剥掉低级别日志；  
-- `enum class`：级别、消息类型、溢出策略。
+- `if constexpr` + `MINISPDLOG_ACTIVE_LEVEL`：Release 可剥掉低级别日志（目前主要作用于 `MINISPDLOG_*` 宏）；  
+- `sourced_fmt`：`consteval` 在调用点捕获 `__builtin_FILE/LINE/FUNCTION`；  
+- `enum class`：级别、消息类型、溢出策略、队列类型。
 
 ### 6.4 移动与视图
 
@@ -392,6 +435,8 @@ auto lg = minispdlog::async_file_mt("async", "async.log", false);
 | `base_sink` `_mt` | 是 | `lock_guard` |
 | `base_sink` `_st` | 仅单线程 | `null_mutex` |
 | `registry` | 是 | 独立 mutex |
+| `logger` 级别 | 是 | `atomic<level>` |
+| `logger` sink 列表 | 是 | COW + `atomic_load` 快照；变更时 mutex |
 | 无锁 spsc/mpsc | 按协议 | lockfree 异步后端使用 MPSC（单 worker） |
 
 ### 7.3 锁粒度（易错点）
@@ -404,15 +449,16 @@ Sink 另有一把锁，避免多 worker 同时写同一文件；设计上先放�
 ### 7.4 调用方约定
 
 1. 多线程共享 Sink → 用 `*_mt`；  
-2. 异步前先 `init_thread_pool`；  
+2. 异步前先 `init_thread_pool`（或 `init_lockfree_thread_pool`）；退出前 `shutdown()`；  
 3. `async_logger` 必须由 `shared_ptr` 管理；  
 4. 勿把裸 `circular_q` 给多线程；  
-5. 热路径是**有锁** MPMC，不是无锁。
+5. 默认热路径是**有锁** MPMC；无锁路径单 worker，且不要用 `overrun_oldest`。
 
 ### 7.5 关闭语义
 
-池析构：`terminate` × N 入队 + `join`，队头积压日志会尽量先消费（`block` 策略下）。  
-无全局 atexit；`overrun_oldest` 覆盖的消息不会落盘。
+`minispdlog::shutdown()`：先对已注册 logger `flush_all`，再停全局线程池（`terminate` × N + `join`），最后 `drop_all`。用过异步时，在 `main` 返回前调用。  
+无全局 atexit；`overrun_oldest` / `discard_new` 丢掉的消息不会落盘。  
+`async_logger::flush()` 向池投递 flush 并等待 ack（`async_msg::ack`），保证已入队记录写出。
 
 ---
 
@@ -421,11 +467,12 @@ Sink 另有一把锁，避免多 worker 同时写同一文件；设计上先放�
 | 项 | 说明 |
 |----|------|
 | 框架 | doctest，单入口 `tests/test_main.cpp` → `minispdlog_tests` |
-| 辅助 | `mock_sink` 内存断言；`test_fixture` 临时目录 RAII |
-| 运行 | `./build/tests/minispdlog_tests`；`ctest --test-dir build/tests` |
-| 过滤 | `./minispdlog_tests -tc='*async*'` 或标签查询 |
+| 用例 | `tests/unit/`：level / sink / logger / registry / pattern / queue / async / utils / callback / daily / rotating / json / qt |
+| 辅助 | `mock_sink` 内存断言；`test_fixture` 临时目录 RAII（析构用 `error_code`，避免 noexcept 里抛异常） |
+| 运行 | `./build/tests/minispdlog_tests`；`ctest --test-dir build --output-on-failure` |
+| 过滤 | `-tc='*json*'` 或标签；PowerShell 下 `[json]` 可能被当成通配符 |
 | Benchmark | 需安装 Google Benchmark；目标 `minispdlog_bench_async` / `_queue` |
-| CI | g++/clang × Release / RelASan / RelTSan |
+| CI | lint（clang-format 允许名单 + clang-tidy）· g++/clang × Release / RelASan / RelTSan · Windows MSVC · coverage |
 
 队列微基准已控制 Iterations/消息量，避免默认统计跑数十分钟；多生产者无锁用例因实验队列风险已收紧。
 
@@ -436,7 +483,7 @@ Sink 另有一把锁，避免多 worker 同时写同一文件；设计上先放�
 | 路径 | 说明 |
 |------|------|
 | `sinks/qt_sink.h` | GUI Sink（需 `MINISPDLOG_WITH_QT`） |
-| `sinks/callback_sink.h` | 无 Qt 回调投递 |
+| `sinks/callback_sink.h` | 无 Qt 的业务回调（告警 / 计数 / 测试）；`callback_logger_*` / `async_callback_mt` |
 | `examples/qt_log_viewer/` | 窗口示例 |
 | `scripts/setup_qt.sh` / `setup_qt.ps1` | 一键装 Qt 到 `third_party/qt` |
 | `tests/unit/test_qt_sink.cpp` | offscreen 单测 |
@@ -542,7 +589,7 @@ cmake --build build -j
 | 应提交 | 不应提交 |
 |--------|----------|
 | 源码、CMake、脚本、`third_party/qt/README.md`、doctest 框架、`third_party/fmt`（子模块） | **`third_party/qt/` 下下载的完整 SDK**（体积大，已 ignore） |
-| 测试与 example 源码 | 本机 `build/` 目录 |
+| 测试与 example 源码 | 本机 `build/`、`logs/`、JVM `hs_err_pid*` / `replay_pid*`、fmt 的 `.gradle/` |
 
 其他人克隆后自行跑安装脚本或使用系统 Qt 即可。
 
@@ -567,19 +614,36 @@ cmake --build build -j
 
 核心库默认不链 Qt；需要 GUI 时再开 CMake 选项；SDK 不进版本库。
 
+### ADR-005：结构化日志是 formatter，不是第二套 logger
+
+`json_formatter` 可挂到任意 sink；生产用的 `json_*` sink 默认装上它并锁住 `set_pattern` / `set_formatter`。滚动/按天仍要 JSON 时用 `json_rotating_file_sink` / `json_daily_file_sink`，不要只给文本 rolling sink 换 formatter（随后 `set_pattern` 会改回纯文本）。
+
+### ADR-006：着色用偏移区间，不把 ANSI 写进 payload
+
+`%^`/`%$` 写入 `log_msg::color_range_*`；只有 color sink 消费。文件与 JSON 保持纯文本/纯 JSON。
+
+### ADR-007：logger sink 列表 copy-on-write
+
+热路径只读快照，避免持 logger 锁做 I/O；与「Sink 自己一把锁」分层。
+
+### ADR-008：批量落盘用双缓冲 + WAL 偏移，而不是逐条 fwrite
+
+`buffered_file_sink`（`json_file_sink` 继承它）在内存里攒一批再一次写入。WAL 带 `target_offset`，崩溃后按主文件大小决定补写或去重，再 salvage 半截行。front buffer 仍可能丢，需要 `flush`/`shutdown`/`install_crash_flush`；这比假装「每条都已落盘」更诚实。
+
 ---
 
 ## 12. 建议阅读顺序
 
-1. `minispdlog.h` — 用户 API 与编译期宏  
-2. `logger.h` / `logger.cpp` — 同步路径  
-3. `sinks/base_sink.h`、`console_sink.h`、`color_console_sink.h` — Sink 与 ANSI 颜色  
-4. `pattern_formatter.*` — 行格式化  
-5. `details/log_msg.h`、`async_msg.h` — 消息模型  
-6. `async.h` → `thread_pool.*` → `mpmc_blocking_q.h` / `mpsc_queue.h` — 异步与并发（含可选无锁）  
-7. `registry.*` — 全局生命周期  
-8. `callback_sink.h` / `qt_sink.h`、`examples/qt_log_viewer` — GUI（可选，见 §9）  
-9. `tests/unit/test_logger.cpp`、`mock_sink.h` — 用测试反推行为  
-10. `docs/roadmap_and_testing_framework.md` — 后续迭代  
+1. `minispdlog.h` — 用户 API、工厂与编译期宏  
+2. `logger.h` / `logger.cpp` — 同步路径、`sourced_fmt`、COW sinks  
+3. `sinks/base_sink.h`、`console_sink.h`、`color_console_sink.h` — Sink 与 `%^`/`%$` 着色  
+4. `pattern_formatter.*`、`json_formatter.*` — 两种行格式  
+5. `details/log_msg.h`、`async_msg.h` — 消息模型（含 `source_loc` / color_range）  
+6. `async.h` → `thread_pool.*` → `mpmc_blocking_q.h` / `mpsc_queue.h` — 异步与并发  
+7. `registry.*` — 全局生命周期与 `shutdown()`  
+8. `sinks/buffered_file_sink.h`、`details/durable_file.*`、`json_sink.h`、`daily_file_sink.h`、`rotating_file_sink.h` — 落盘、批量与找回  
+9. `callback_sink.h`、`examples/callback_log` — 回调旁路；`qt_sink.h`、`examples/qt_log_viewer` — GUI（可选，见 §9）  
+10. `tests/unit/test_logger.cpp`、`test_json.cpp`、`test_buffered_file.cpp`、`mock_sink.h` — 用测试反推行为  
+11. `docs/roadmap_and_testing_framework.md` — 历史规划与未做项（hourly / syslog / backtrace 等）  
 
 按此顺序阅读，即可系统掌握本项目的设计意图与技术栈落地方式。
