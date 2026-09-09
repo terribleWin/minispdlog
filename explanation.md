@@ -205,7 +205,6 @@ info("x") → logger::log                 【③】过滤 + fmt（仍在业务�
 | `src/` | 上述实现，链成静态库 `minispdlog` |
 | `tests/unit/`、`tests/framework/` | 按组件测各层行为 |
 | `examples/`、`scripts/`、`cmake/` | 示例与可选 Qt 工程化 |
-| `docs/roadmap_and_testing_framework.md` | 迭代路线图 |
 
 ---
 
@@ -329,7 +328,7 @@ minispdlog::shutdown();
 
 `json_*` sink 在构造时安装 `json_formatter`，并覆盖 `set_pattern` / `set_formatter`，避免 `logger->set_pattern` 把结构化输出改回纯文本。任意其它 sink（含 rolling/daily 文本 sink）仍可 `set_formatter(std::make_unique<json_formatter>())`；要滚动仍保持 JSON，用 `json_rotating_file_sink` / `rotating_json_logger_mt`。
 
-路线图中还可扩展：按小时滚动、syslog、网络 Sink 等（见 `docs/roadmap_and_testing_framework.md`）。
+后续还可扩展按小时滚动、syslog、网络 Sink 等。
 
 ### 5.3 颜色如何实现
 
@@ -644,6 +643,5 @@ cmake --build build -j
 8. `sinks/buffered_file_sink.h`、`details/durable_file.*`、`json_sink.h`、`daily_file_sink.h`、`rotating_file_sink.h` — 落盘、批量与找回  
 9. `callback_sink.h`、`examples/callback_log` — 回调旁路；`qt_sink.h`、`examples/qt_log_viewer` — GUI（可选，见 §9）  
 10. `tests/unit/test_logger.cpp`、`test_json.cpp`、`test_buffered_file.cpp`、`mock_sink.h` — 用测试反推行为  
-11. `docs/roadmap_and_testing_framework.md` — 历史规划与未做项（hourly / syslog / backtrace 等）  
 
 按此顺序阅读，即可系统掌握本项目的设计意图与技术栈落地方式。

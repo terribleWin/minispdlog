@@ -30,6 +30,11 @@ struct sourced_fmt {
         , loc(file, line, func) {}
 };
 
+inline fmt::memory_buffer& thread_payload_buf() {
+    thread_local fmt::memory_buffer buf;
+    return buf;
+}
+
 }  // namespace details
 
     class MINISPDLOG_API logger : public std::enable_shared_from_this<logger> {
@@ -73,7 +78,8 @@ struct sourced_fmt {
             void log(level lvl, details::source_loc loc, fmt::format_string<Args...> fmt,
                      Args&&... args) {
                 if (!this->should_log(lvl)) return;
-                fmt::memory_buffer buf;
+                auto& buf = details::thread_payload_buf();
+                buf.clear();
                 fmt::format_to(std::back_inserter(buf), fmt, std::forward<Args>(args)...);
                 details::log_msg log_message(
                     loc,

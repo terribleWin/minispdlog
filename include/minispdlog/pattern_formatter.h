@@ -4,6 +4,7 @@
 #include "formatter.h"
 #include "level.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -18,6 +19,8 @@ namespace minispdlog {
  *   source %s:%#  or %@
  *   fields [..] [..] separated by a space
  *   color  %^ ... %$  (marks log_msg::color_range_* for color sinks)
+ *
+ * Flags are compiled into a switch table (no per-flag virtual calls).
  */
     class pattern_formatter : public formatter {
         public:
@@ -29,22 +32,44 @@ namespace minispdlog {
             void format(const details::log_msg& msg, fmt::memory_buffer& dest) override;
             std::unique_ptr<formatter> clone() const override;
             void set_pattern(std::string pattern);
-        
-        public:
-            //抽象基类 处理单个占位符
-            class flag_formatter {
-                public:
-                    virtual ~flag_formatter() = default;
-                    virtual void format(const details::log_msg& msg,
-                                        const details::wall_clock_cache& clock,
-                                       fmt::memory_buffer& dest) = 0;
-                    virtual std::unique_ptr<flag_formatter> clone() const = 0;
-            };
-        
+
         private:
+            enum class piece_kind : std::uint8_t {
+                literal,
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                millis,
+                micros,
+                level_short,
+                level_full,
+                name,
+                payload,
+                tid,
+                pid,
+                src_file,
+                src_path,
+                src_line,
+                src_func,
+                src_loc,
+                color_start,
+                color_stop
+            };
+
+            struct piece {
+                piece_kind kind{piece_kind::literal};
+                std::uint16_t lit{0};
+            };
+
             void compile_pattern();
+            void push_literal_(std::string& raw);
+
             std::string pattern_;
-            std::vector<std::unique_ptr<flag_formatter>> formatters_;
+            std::vector<piece> pieces_;
+            std::vector<std::string> literals_;
             details::wall_clock_cache clock_{};
             bool needs_calendar_{false};
     };

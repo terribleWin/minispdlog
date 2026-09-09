@@ -249,6 +249,50 @@ TEST_CASE("mpsc_queue push failure leaves value intact [queue][mpsc]") {
     REQUIRE(third == 42);
 }
 
+TEST_CASE("mpsc_queue concurrent full-queue retries do not drop tickets [queue][mpsc][thread]") {
+    mpsc_queue<int> q(8);
+    const int producers = 8;
+    const int items_per_producer = 200;
+    const int total = producers * items_per_producer;
+    std::atomic<int> accepted{0};
+
+    std::vector<std::thread> threads;
+    for (int p = 0; p < producers; ++p) {
+        threads.emplace_back([&, p]() {
+            for (int i = 0; i < items_per_producer; ++i) {
+                const int value = p * items_per_producer + i;
+                while (!q.push(value)) {
+                    std::this_thread::yield();
+                }
+                accepted.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    std::vector<int> got;
+    got.reserve(static_cast<std::size_t>(total));
+    std::thread consumer([&]() {
+        int val = 0;
+        while (static_cast<int>(got.size()) < total) {
+            if (q.pop(val)) {
+                got.push_back(val);
+            } else {
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    for (auto& t : threads) {
+        t.join();
+    }
+    consumer.join();
+
+    REQUIRE(accepted.load() == total);
+    REQUIRE(static_cast<int>(got.size()) == total);
+    std::set<int> unique(got.begin(), got.end());
+    REQUIRE(static_cast<int>(unique.size()) == total);
+}
+
 // ---------- spsc_queue ----------
 
 TEST_CASE("spsc_queue basic push pop [queue][spsc]") {

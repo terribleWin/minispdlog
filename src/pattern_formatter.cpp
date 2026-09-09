@@ -26,275 +26,20 @@ const char* basename(const char* path) {
     return base;
 }
 
-class raw_string_formatter : public pattern_formatter::flag_formatter {
-public:
-    explicit raw_string_formatter(std::string str)
-        : str_(std::move(str)) {}
-    void format(const details::log_msg&, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        dest.append(str_.data(), str_.data() + str_.size());
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<raw_string_formatter>(str_);
-    }
-
-private:
-    std::string str_;
-};
-
-class year_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg&, const details::wall_clock_cache& clock,
-                fmt::memory_buffer& dest) override {
-        details::append_raw(dest, clock.ymd_hms, 4);
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<year_formatter>();
-    }
-};
-
-class month_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg&, const details::wall_clock_cache& clock,
-                fmt::memory_buffer& dest) override {
-        details::append_raw(dest, clock.ymd_hms + 5, 2);
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<month_formatter>();
-    }
-};
-
-class day_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg&, const details::wall_clock_cache& clock,
-                fmt::memory_buffer& dest) override {
-        details::append_raw(dest, clock.ymd_hms + 8, 2);
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<day_formatter>();
-    }
-};
-
-class hour_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg&, const details::wall_clock_cache& clock,
-                fmt::memory_buffer& dest) override {
-        details::append_raw(dest, clock.ymd_hms + 11, 2);
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<hour_formatter>();
-    }
-};
-
-class minute_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg&, const details::wall_clock_cache& clock,
-                fmt::memory_buffer& dest) override {
-        details::append_raw(dest, clock.ymd_hms + 14, 2);
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<minute_formatter>();
-    }
-};
-
-class second_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg&, const details::wall_clock_cache& clock,
-                fmt::memory_buffer& dest) override {
-        details::append_raw(dest, clock.ymd_hms + 17, 2);
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<second_formatter>();
-    }
-};
-
-class millis_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        details::append_padded3(dest, details::millis_of_second(msg.time));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<millis_formatter>();
-    }
-};
-
-class micros_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        details::append_padded6(dest, details::micros_of_second(msg.time));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<micros_formatter>();
-    }
-};
-
-class level_short_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        append_str(dest, level_to_short_string(msg.lvl));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<level_short_formatter>();
-    }
-};
-
-class level_full_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        append_str(dest, level_to_string(msg.lvl));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<level_full_formatter>();
-    }
-};
-
-class logger_name_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        dest.append(msg.logger_name.data(), msg.logger_name.data() + msg.logger_name.size());
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<logger_name_formatter>();
-    }
-};
-
-class pay_load : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        dest.append(msg.payload.data(), msg.payload.data() + msg.payload.size());
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<pay_load>();
-    }
-};
-
-class thread_id_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        details::append_uint64(dest, static_cast<std::uint64_t>(msg.thread_id));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<thread_id_formatter>();
-    }
-};
-
-class pid_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        details::append_uint64(dest, static_cast<std::uint64_t>(msg.process_id));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<pid_formatter>();
-    }
-};
-
-class source_filename_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        if (msg.source.empty()) {
-            return;
-        }
-        append_str(dest, basename(msg.source.filename));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<source_filename_formatter>();
-    }
-};
-
-class source_path_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        if (msg.source.empty()) {
-            return;
-        }
-        append_str(dest, msg.source.filename);
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<source_path_formatter>();
-    }
-};
-
-class source_line_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        if (msg.source.empty()) {
-            return;
-        }
-        details::append_int64(dest, static_cast<std::int64_t>(msg.source.line));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<source_line_formatter>();
-    }
-};
-
-class source_func_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        if (msg.source.empty()) {
-            return;
-        }
-        append_str(dest, msg.source.funcname);
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<source_func_formatter>();
-    }
-};
-
-class source_location_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        if (msg.source.empty()) {
-            return;
-        }
-        append_str(dest, basename(msg.source.filename));
-        dest.push_back(':');
-        details::append_int64(dest, static_cast<std::int64_t>(msg.source.line));
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<source_location_formatter>();
-    }
-};
-
-class color_start_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        msg.color_range_start = dest.size();
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<color_start_formatter>();
-    }
-};
-
-class color_stop_formatter : public pattern_formatter::flag_formatter {
-public:
-    void format(const details::log_msg& msg, const details::wall_clock_cache&,
-                fmt::memory_buffer& dest) override {
-        msg.color_range_end = dest.size();
-    }
-    std::unique_ptr<flag_formatter> clone() const override {
-        return std::make_unique<color_stop_formatter>();
-    }
-};
-
-} // namespace
+}  // namespace
 
 pattern_formatter::pattern_formatter(std::string pattern)
     : pattern_(std::move(pattern)) {
     compile_pattern();
+}
+
+void pattern_formatter::push_literal_(std::string& raw) {
+    if (raw.empty()) {
+        return;
+    }
+    pieces_.push_back(piece{piece_kind::literal, static_cast<std::uint16_t>(literals_.size())});
+    literals_.push_back(std::move(raw));
+    raw.clear();
 }
 
 void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& dest) {
@@ -303,8 +48,90 @@ void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& 
     if (needs_calendar_) {
         clock_.refresh(msg.time);
     }
-    for (const auto& formatter : formatters_) {
-        formatter->format(msg, clock_, dest);
+    for (const auto& p : pieces_) {
+        switch (p.kind) {
+            case piece_kind::literal: {
+                const auto& s = literals_[p.lit];
+                dest.append(s.data(), s.data() + s.size());
+                break;
+            }
+            case piece_kind::year:
+                details::append_raw(dest, clock_.ymd_hms, 4);
+                break;
+            case piece_kind::month:
+                details::append_raw(dest, clock_.ymd_hms + 5, 2);
+                break;
+            case piece_kind::day:
+                details::append_raw(dest, clock_.ymd_hms + 8, 2);
+                break;
+            case piece_kind::hour:
+                details::append_raw(dest, clock_.ymd_hms + 11, 2);
+                break;
+            case piece_kind::minute:
+                details::append_raw(dest, clock_.ymd_hms + 14, 2);
+                break;
+            case piece_kind::second:
+                details::append_raw(dest, clock_.ymd_hms + 17, 2);
+                break;
+            case piece_kind::millis:
+                details::append_padded3(dest, details::millis_of_second(msg.time));
+                break;
+            case piece_kind::micros:
+                details::append_padded6(dest, details::micros_of_second(msg.time));
+                break;
+            case piece_kind::level_short:
+                append_str(dest, level_to_short_string(msg.lvl));
+                break;
+            case piece_kind::level_full:
+                append_str(dest, level_to_string(msg.lvl));
+                break;
+            case piece_kind::name:
+                dest.append(msg.logger_name.data(),
+                            msg.logger_name.data() + msg.logger_name.size());
+                break;
+            case piece_kind::payload:
+                dest.append(msg.payload.data(), msg.payload.data() + msg.payload.size());
+                break;
+            case piece_kind::tid:
+                details::append_uint64(dest, static_cast<std::uint64_t>(msg.thread_id));
+                break;
+            case piece_kind::pid:
+                details::append_uint64(dest, static_cast<std::uint64_t>(msg.process_id));
+                break;
+            case piece_kind::src_file:
+                if (!msg.source.empty()) {
+                    append_str(dest, basename(msg.source.filename));
+                }
+                break;
+            case piece_kind::src_path:
+                if (!msg.source.empty()) {
+                    append_str(dest, msg.source.filename);
+                }
+                break;
+            case piece_kind::src_line:
+                if (!msg.source.empty()) {
+                    details::append_int64(dest, static_cast<std::int64_t>(msg.source.line));
+                }
+                break;
+            case piece_kind::src_func:
+                if (!msg.source.empty()) {
+                    append_str(dest, msg.source.funcname);
+                }
+                break;
+            case piece_kind::src_loc:
+                if (!msg.source.empty()) {
+                    append_str(dest, basename(msg.source.filename));
+                    dest.push_back(':');
+                    details::append_int64(dest, static_cast<std::int64_t>(msg.source.line));
+                }
+                break;
+            case piece_kind::color_start:
+                msg.color_range_start = dest.size();
+                break;
+            case piece_kind::color_stop:
+                msg.color_range_end = dest.size();
+                break;
+        }
     }
     dest.push_back('\n');
 }
@@ -315,7 +142,8 @@ std::unique_ptr<formatter> pattern_formatter::clone() const {
 
 void pattern_formatter::set_pattern(std::string pattern) {
     pattern_ = std::move(pattern);
-    formatters_.clear();
+    pieces_.clear();
+    literals_.clear();
     needs_calendar_ = false;
     compile_pattern();
 }
@@ -324,80 +152,77 @@ void pattern_formatter::compile_pattern() {
     std::string raw_str;
     for (size_t i = 0; i < pattern_.size(); ++i) {
         if (pattern_[i] == '%' && i + 1 < pattern_.size()) {
-            if (!raw_str.empty()) {
-                formatters_.push_back(std::make_unique<raw_string_formatter>(raw_str));
-                raw_str.clear();
-            }
             char flag = pattern_[++i];
+            auto push_flag = [&](piece_kind kind, bool calendar = false) {
+                push_literal_(raw_str);
+                if (calendar) {
+                    needs_calendar_ = true;
+                }
+                pieces_.push_back(piece{kind, 0});
+            };
             switch (flag) {
                 case 'Y':
-                    needs_calendar_ = true;
-                    formatters_.push_back(std::make_unique<year_formatter>());
+                    push_flag(piece_kind::year, true);
                     break;
                 case 'm':
-                    needs_calendar_ = true;
-                    formatters_.push_back(std::make_unique<month_formatter>());
+                    push_flag(piece_kind::month, true);
                     break;
                 case 'd':
-                    needs_calendar_ = true;
-                    formatters_.push_back(std::make_unique<day_formatter>());
+                    push_flag(piece_kind::day, true);
                     break;
                 case 'H':
-                    needs_calendar_ = true;
-                    formatters_.push_back(std::make_unique<hour_formatter>());
+                    push_flag(piece_kind::hour, true);
                     break;
                 case 'M':
-                    needs_calendar_ = true;
-                    formatters_.push_back(std::make_unique<minute_formatter>());
+                    push_flag(piece_kind::minute, true);
                     break;
                 case 'S':
-                    needs_calendar_ = true;
-                    formatters_.push_back(std::make_unique<second_formatter>());
+                    push_flag(piece_kind::second, true);
                     break;
                 case 'e':
-                    formatters_.push_back(std::make_unique<millis_formatter>());
+                    push_flag(piece_kind::millis);
                     break;
                 case 'f':
-                    formatters_.push_back(std::make_unique<micros_formatter>());
+                    push_flag(piece_kind::micros);
                     break;
                 case 'l':
-                    formatters_.push_back(std::make_unique<level_short_formatter>());
+                    push_flag(piece_kind::level_short);
                     break;
                 case 'L':
-                    formatters_.push_back(std::make_unique<level_full_formatter>());
+                    push_flag(piece_kind::level_full);
                     break;
                 case 'n':
-                    formatters_.push_back(std::make_unique<logger_name_formatter>());
+                    push_flag(piece_kind::name);
                     break;
                 case 'v':
-                    formatters_.push_back(std::make_unique<pay_load>());
+                    push_flag(piece_kind::payload);
                     break;
                 case 't':
-                    formatters_.push_back(std::make_unique<thread_id_formatter>());
+                    push_flag(piece_kind::tid);
                     break;
                 case 'P':
-                    formatters_.push_back(std::make_unique<pid_formatter>());
+                    push_flag(piece_kind::pid);
                     break;
                 case 's':
-                    formatters_.push_back(std::make_unique<source_filename_formatter>());
+                    push_flag(piece_kind::src_file);
                     break;
                 case 'g':
-                    formatters_.push_back(std::make_unique<source_path_formatter>());
+                    push_flag(piece_kind::src_path);
                     break;
                 case '#':
-                    formatters_.push_back(std::make_unique<source_line_formatter>());
+                    push_flag(piece_kind::src_line);
                     break;
                 case '!':
-                    formatters_.push_back(std::make_unique<source_func_formatter>());
+                    push_flag(piece_kind::src_func);
                     break;
                 case '@':
-                    formatters_.push_back(std::make_unique<source_location_formatter>());
+                    push_flag(piece_kind::src_loc);
                     break;
                 case '^':
-                    formatters_.push_back(std::make_unique<color_start_formatter>());
+                    push_flag(piece_kind::color_start);
                     break;
                 case '$':
-                    formatters_.push_back(std::make_unique<color_stop_formatter>());
+                    push_flag(piece_kind::color_stop);
                     break;
                 case '%':
                     raw_str += '%';
@@ -411,9 +236,7 @@ void pattern_formatter::compile_pattern() {
             raw_str += pattern_[i];
         }
     }
-    if (!raw_str.empty()) {
-        formatters_.push_back(std::make_unique<raw_string_formatter>(raw_str));
-    }
+    push_literal_(raw_str);
 }
 
-} // namespace minispdlog
+}  // namespace minispdlog

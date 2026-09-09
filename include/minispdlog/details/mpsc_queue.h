@@ -1,14 +1,16 @@
 #pragma once
 
 #include <atomic>
-#include <vector>
 #include <cstddef>
+#include <utility>
+#include <vector>
 
 namespace minispdlog {
 namespace details {
 
-// 无锁 MPSC 队列（多生产者单消费者）
-// 生产者用 CAS 竞争写入槽位，消费者无锁读取
+// Bounded MPSC ring. Producers CAS-claim a write ticket; the consumer is
+// single-threaded. Do not fetch_add/fetch_sub the write index — rolling it
+// back races with other producers and can skip or double-use slots.
 template<typename T>
 class mpsc_queue {
 public:
@@ -19,64 +21,45 @@ public:
         , write_idx_(0)
         , read_idx_(0) {}
 
-    // 生产者调用（多线程安全，CAS 竞争）
     bool push(T&& item) {
-        size_t write_pos = write_idx_.fetch_add(1, std::memory_order_relaxed);
-        size_t index = write_pos % capacity_;
-
-        // 队列满？检查读索引
-        size_t read_pos = read_idx_.load(std::memory_order_acquire);
-        if (write_pos - read_pos >= capacity_) {
-            // CAS 回退
-            write_idx_.fetch_sub(1, std::memory_order_relaxed);
+        size_t pos = 0;
+        if (!claim_write_slot_(pos)) {
             return false;
         }
-
-        // 写入数据
+        const size_t index = pos % capacity_;
         buffer_[index] = std::move(item);
-
-        // 标记该槽位已就绪
         ready_[index].store(1, std::memory_order_release);
         return true;
     }
 
-    // 消费者调用（单线程，无锁）
-    bool pop(T& item) {
-        size_t read_pos = read_idx_.load(std::memory_order_relaxed);
-        size_t index = read_pos % capacity_;
-
-        // 检查槽位是否已就绪
-        if (!ready_[index].load(std::memory_order_acquire)) {
-            return false;  // 生产者还没写完
-        }
-
-        // 读取数据
-        item = std::move(buffer_[index]);
-        ready_[index].store(0, std::memory_order_relaxed);
-
-        // 推进读指针
-        read_idx_.store(read_pos + 1, std::memory_order_release);
-        return true;
-    }
-
     bool push(const T& item) {
-        size_t write_pos = write_idx_.fetch_add(1, std::memory_order_relaxed);
-        size_t index = write_pos % capacity_;
-
-        size_t read_pos = read_idx_.load(std::memory_order_acquire);
-        if (write_pos - read_pos >= capacity_) {
-            write_idx_.fetch_sub(1, std::memory_order_relaxed);
+        size_t pos = 0;
+        if (!claim_write_slot_(pos)) {
             return false;
         }
-
+        const size_t index = pos % capacity_;
         buffer_[index] = item;
         ready_[index].store(1, std::memory_order_release);
         return true;
     }
 
+    bool pop(T& item) {
+        const size_t read_pos = read_idx_.load(std::memory_order_relaxed);
+        const size_t index = read_pos % capacity_;
+
+        if (!ready_[index].load(std::memory_order_acquire)) {
+            return false;
+        }
+
+        item = std::move(buffer_[index]);
+        ready_[index].store(0, std::memory_order_relaxed);
+        read_idx_.store(read_pos + 1, std::memory_order_release);
+        return true;
+    }
+
     size_t size() const {
-        auto w = write_idx_.load(std::memory_order_acquire);
-        auto r = read_idx_.load(std::memory_order_acquire);
+        const auto w = write_idx_.load(std::memory_order_acquire);
+        const auto r = read_idx_.load(std::memory_order_acquire);
         return w - r;
     }
 
@@ -85,12 +68,26 @@ public:
     size_t capacity() const { return capacity_; }
 
 private:
+    bool claim_write_slot_(size_t& pos) {
+        for (;;) {
+            pos = write_idx_.load(std::memory_order_relaxed);
+            const auto read_pos = read_idx_.load(std::memory_order_acquire);
+            if (pos - read_pos >= capacity_) {
+                return false;
+            }
+            if (write_idx_.compare_exchange_weak(pos, pos + 1, std::memory_order_acq_rel,
+                                                 std::memory_order_relaxed)) {
+                return true;
+            }
+        }
+    }
+
     size_t capacity_;
     std::vector<T> buffer_;
-    std::vector<std::atomic<int>> ready_;  // 每个槽位的就绪标志
+    std::vector<std::atomic<int>> ready_;
     std::atomic<size_t> write_idx_;
     std::atomic<size_t> read_idx_;
 };
 
-} // namespace details
-} // namespace minispdlog
+}  // namespace details
+}  // namespace minispdlog
