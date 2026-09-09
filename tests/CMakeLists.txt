@@ -99,6 +99,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     if(MINISPDLOG_ENABLE_COVERAGE)
         message(STATUS "Coverage enabled for minispdlog_tests")
 
+        target_compile_options(minispdlog PRIVATE --coverage -O0)
+        target_link_options(minispdlog PUBLIC --coverage)
         target_compile_options(minispdlog_tests PRIVATE --coverage -O0)
         target_link_options(minispdlog_tests PRIVATE --coverage)
 
@@ -107,20 +109,22 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
         if(LCOV_PATH AND GENHTML_PATH)
             add_custom_target(coverage
-                # 1. 先运行所有测试
                 COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-                # 2. 收集覆盖率数据
-                COMMAND ${LCOV_PATH} --capture --directory . --output-file coverage.info
-                # 3. 过滤掉系统头、第三方库、测试框架本身
+                COMMAND ${LCOV_PATH} --capture --directory ${CMAKE_BINARY_DIR}
+                    --base-directory ${PROJECT_SOURCE_DIR}
+                    --no-external
+                    --output-file coverage.info
+                    --rc lcov_branch_coverage=0
+                    --ignore-errors source,graph,gcov
                 COMMAND ${LCOV_PATH} --remove coverage.info
-                    '/usr/*'
                     '*/third_party/*'
                     '*/tests/framework/*'
-                    '*/tests/unit/*'
                     --output-file coverage.info.cleaned
-                # 4. 生成 HTML 报告
+                    --rc lcov_branch_coverage=0
+                    --ignore-errors source,graph,gcov
                 COMMAND ${GENHTML_PATH} coverage.info.cleaned --output-directory coverage_report
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                DEPENDS minispdlog_tests
                 COMMENT "Generating coverage report (this may take a while)..."
             )
         else()

@@ -5,8 +5,10 @@
 #include "utils.h"
 
 #include <cstddef>
-#if __has_include(<source_location>) && __cplusplus >= 202002L
+#if __has_include(<source_location>)
     #include <source_location>
+#endif
+#if defined(__cpp_lib_source_location) && __cpp_lib_source_location >= 201907L
     #define MINISPDLOG_HAS_SOURCE_LOCATION 1
 #else
     #define MINISPDLOG_HAS_SOURCE_LOCATION 0

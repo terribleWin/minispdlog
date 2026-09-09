@@ -5,10 +5,10 @@
 #include "details/log_msg.h"
 #include <fmt/format.h>
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -16,17 +16,29 @@ namespace minispdlog {
 namespace details {
 
 // Converts a format string at the call site and captures file/line/function.
-// consteval so fmt::format_string is built from the literal, not a parameter.
-template <typename... Args>
+//
+// This is a single user-defined conversion from a string literal, which is
+// required for `lg.info("n={}", 7)`. Wrapping fmt::format_string would need a
+// second conversion (rejected by MSVC/Clang). A consteval ctor from const char*
+// is also not a constant expression on Clang 14 (Ubuntu 22.04 CI). Macros still
+// pass fmt::format_string into log() and keep compile-time format checks.
 struct sourced_fmt {
-    fmt::format_string<Args...> value;
+    const char* text{nullptr};
     source_loc loc;
 
-    consteval sourced_fmt(const char* s,
-                          const char* file = __builtin_FILE(),
-                          int line = __builtin_LINE(),
-                          const char* func = __builtin_FUNCTION())
-        : value(s)
+    template <std::size_t N>
+    sourced_fmt(const char (&s)[N],
+                const char* file = __builtin_FILE(),
+                int line = __builtin_LINE(),
+                const char* func = __builtin_FUNCTION()) noexcept
+        : text(s)
+        , loc(file, line, func) {}
+
+    sourced_fmt(const char* s,
+                const char* file = __builtin_FILE(),
+                int line = __builtin_LINE(),
+                const char* func = __builtin_FUNCTION()) noexcept
+        : text(s)
         , loc(file, line, func) {}
 };
 
@@ -50,37 +62,37 @@ inline fmt::memory_buffer& thread_payload_buf() {
             logger& operator=(const logger&) = delete;
 
             template<typename... Args>
-            void trace(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
-                log(level::trace, fmt.loc, fmt.value, std::forward<Args>(args)...);
+            void trace(details::sourced_fmt srcfmt, Args&&... args) {
+                log(level::trace, srcfmt, std::forward<Args>(args)...);
             }
             template<typename... Args>
-            void debug(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
-                log(level::debug, fmt.loc, fmt.value, std::forward<Args>(args)...);
+            void debug(details::sourced_fmt srcfmt, Args&&... args) {
+                log(level::debug, srcfmt, std::forward<Args>(args)...);
             }
             template<typename... Args>
-            void info(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
-                log(level::info, fmt.loc, fmt.value, std::forward<Args>(args)...);
+            void info(details::sourced_fmt srcfmt, Args&&... args) {
+                log(level::info, srcfmt, std::forward<Args>(args)...);
             }
             template<typename... Args>
-            void warn(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
-                log(level::warn, fmt.loc, fmt.value, std::forward<Args>(args)...);
+            void warn(details::sourced_fmt srcfmt, Args&&... args) {
+                log(level::warn, srcfmt, std::forward<Args>(args)...);
             }
             template<typename... Args>
-            void error(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
-                log(level::error, fmt.loc, fmt.value, std::forward<Args>(args)...);
+            void error(details::sourced_fmt srcfmt, Args&&... args) {
+                log(level::error, srcfmt, std::forward<Args>(args)...);
             }
             template<typename... Args>
-            void critical(details::sourced_fmt<std::type_identity_t<Args>...> fmt, Args&&... args) {
-                log(level::critical, fmt.loc, fmt.value, std::forward<Args>(args)...);
+            void critical(details::sourced_fmt srcfmt, Args&&... args) {
+                log(level::critical, srcfmt, std::forward<Args>(args)...);
             }
             // Single write path: fills time, thread, pid, and the captured source_loc.
             template<typename... Args>
-            void log(level lvl, details::source_loc loc, fmt::format_string<Args...> fmt,
+            void log(level lvl, details::source_loc loc, fmt::format_string<Args...> format,
                      Args&&... args) {
                 if (!this->should_log(lvl)) return;
                 auto& buf = details::thread_payload_buf();
                 buf.clear();
-                fmt::format_to(std::back_inserter(buf), fmt, std::forward<Args>(args)...);
+                ::fmt::format_to(std::back_inserter(buf), format, std::forward<Args>(args)...);
                 details::log_msg log_message(
                     loc,
                     name_,
@@ -90,9 +102,8 @@ inline fmt::memory_buffer& thread_payload_buf() {
                 sink_it_(log_message);
             }
             template<typename... Args>
-            void log(level lvl, details::sourced_fmt<std::type_identity_t<Args>...> fmt,
-                     Args&&... args) {
-                log(lvl, fmt.loc, fmt.value, std::forward<Args>(args)...);
+            void log(level lvl, details::sourced_fmt srcfmt, Args&&... args) {
+                log(lvl, srcfmt.loc, ::fmt::runtime(srcfmt.text), std::forward<Args>(args)...);
             }
 
             // Concurrent-safe sink list mutation (copy-on-write).

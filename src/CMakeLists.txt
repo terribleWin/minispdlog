@@ -25,6 +25,11 @@ target_include_directories(minispdlog PUBLIC
 # 链接 fmt 库
 target_link_libraries(minispdlog PUBLIC fmt::fmt)
 
+if(UNIX AND NOT APPLE)
+    # Clang does not always pull in libatomic for std::atomic::wait/notify.
+    target_link_libraries(minispdlog PUBLIC atomic)
+endif()
+
 # 设置编译特性
 set_target_properties(minispdlog PROPERTIES 
     CXX_STANDARD 20

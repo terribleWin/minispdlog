@@ -36,3 +36,4 @@ CheckOptions:
 HeaderFilterRegex: 'include[/\\]minispdlog[/\\]'
 WarningsAsErrors: ''
 FormatStyle: file
+ExtraArgs: ['-std=c++20']

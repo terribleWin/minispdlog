@@ -20,7 +20,7 @@ jobs:
       - name: Install clang-format and clang-tidy
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq clang-tidy python3-pip
+          sudo apt-get install -y -qq clang-tidy-15 python3-pip
           # Pin to the same clang-format the Windows/dev tree uses (pip 23.1.0).
           python3 -m pip install --user 'clang-format==23.1.0'
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -35,6 +35,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug
 
       - name: clang-tidy (repo .clang-tidy)
+        env:
+          CLANG_TIDY: clang-tidy-15
         run: bash scripts/lint.sh tidy
 
   # ============================================================
@@ -45,7 +47,7 @@ jobs:
       fail-fast: false  # 一个矩阵项失败不终止其他项
       matrix:
         os: [ubuntu-22.04]
-        compiler: [g++, clang++]
+        compiler: [g++, clang++-15]
         build_type: [Release, RelASan, RelTSan]
 
     runs-on: ${{ matrix.os }}
@@ -59,6 +61,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libfmt-dev libbenchmark-dev lcov
+          if [[ "${{ matrix.compiler }}" == clang++* ]]; then
+            sudo apt-get install -y -qq clang-15 libatomic1
+          fi
 
       - name: Configure
         run: |

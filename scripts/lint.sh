@@ -36,5 +36,20 @@ if [[ "${cmd}" == "tidy" || "${cmd}" == "all" ]]; then
         echo "lint.sh: no src/*.cpp files" >&2
         exit 1
     fi
-    clang-tidy --config-file="${ROOT}/.clang-tidy" -p build "${sources[@]}"
+    tidy_bin="${CLANG_TIDY:-}"
+    if [[ -z "${tidy_bin}" ]]; then
+        for candidate in clang-tidy-18 clang-tidy-16 clang-tidy-15 clang-tidy; do
+            if command -v "${candidate}" >/dev/null 2>&1; then
+                tidy_bin="${candidate}"
+                break
+            fi
+        done
+    fi
+    if [[ -z "${tidy_bin}" ]]; then
+        echo "lint.sh: clang-tidy not found" >&2
+        exit 1
+    fi
+    echo "lint.sh: using ${tidy_bin}"
+    "${tidy_bin}" --config-file="${ROOT}/.clang-tidy" -p build \
+        --extra-arg=-std=c++20 "${sources[@]}"
 fi
