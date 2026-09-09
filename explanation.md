@@ -50,7 +50,7 @@ minispdlog::info("Hello, {}!", "World");
 
 | 类别 | 选型 | 在本项目中的角色 |
 |------|------|------------------|
-| 语言标准 | **C++20** | `CMakelists.txt` 强制；使用 `if constexpr`、`string_view`、`format_string` 等 |
+| 语言标准 | **C++20** | `CMakeLists.txt` 强制；使用 `if constexpr`、`string_view`、`format_string` 等 |
 | 构建 | **CMake ≥ 3.11** | 静态库 `minispdlog`、测试、可选 Qt/Benchmark、ASan/TSan 变体 |
 | 字符串格式化 | **{fmt}**（`third_party/fmt`） | `logger::log` 中 `fmt::format_to`；编译期检查格式串 |
 | 异步队列 | 自研 **circular_q + mpmc_blocking_queue** | 热路径；mutex + 双条件变量 |
