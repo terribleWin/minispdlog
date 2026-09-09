@@ -51,7 +51,8 @@ TEST_CASE("thread_pool handles multiple messages [async][thread_pool]") {
 
     const int num_msgs = 100;
     for (int i = 0; i < num_msgs; ++i) {
-        details::log_msg msg("tp", level::info, "msg" + std::to_string(i));
+        const auto payload = "msg" + std::to_string(i);
+        details::log_msg msg("tp", level::info, payload);
         pool.post_log(std::shared_ptr<logger>(lg), msg);
     }
     pool.post_flush(std::shared_ptr<logger>(lg), true);
@@ -220,7 +221,8 @@ TEST_CASE("lockfree thread_pool delivers messages [async][lockfree][thread]") {
 
     const int n = 200;
     for (int i = 0; i < n; ++i) {
-        details::log_msg msg("lf", level::info, "lockfree-" + std::to_string(i));
+        const auto payload = "lockfree-" + std::to_string(i);
+        details::log_msg msg("lf", level::info, payload);
         pool.post_log(std::shared_ptr<logger>(lg), msg, async_overflow_policy::block);
     }
     pool.post_flush(std::shared_ptr<logger>(lg), true);

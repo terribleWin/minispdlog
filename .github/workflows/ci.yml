@@ -75,7 +75,11 @@ jobs:
         run: cmake --build build --parallel $(nproc)
 
       - name: Run tests (ctest)
-        run: ctest --test-dir build --output-on-failure --parallel $(nproc) --no-tests=error
+        run: |
+          if [[ "${{ matrix.build_type }}" == *TSan* ]]; then
+            sudo sysctl vm.mmap_rnd_bits=28 || true
+          fi
+          ctest --test-dir build --output-on-failure --parallel $(nproc) --no-tests=error
 
       - name: Run benchmarks (Release only)
         if: matrix.build_type == 'Release'

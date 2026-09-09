@@ -288,6 +288,9 @@ void thread_pool::post_flush(logger* worker, bool wait) {
     if (wait) {
         done.wait();
         wait_for_pending_logs_();
+        if (worker != nullptr) {
+            worker->backend_flush_();
+        }
     }
 }
 
@@ -299,6 +302,7 @@ void thread_pool::post_flush(std::shared_ptr<logger>&& logger_ptr, bool wait) {
         return;
     }
 
+    auto keep = logger_ptr;
     async_msg flush_msg(async_msg_type::flush, std::move(logger_ptr));
     std::future<void> done;
     if (wait) {
@@ -317,6 +321,9 @@ void thread_pool::post_flush(std::shared_ptr<logger>&& logger_ptr, bool wait) {
     if (wait) {
         done.wait();
         wait_for_pending_logs_();
+        if (keep) {
+            keep->backend_flush_();
+        }
     }
 }
 

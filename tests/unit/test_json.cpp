@@ -436,7 +436,8 @@ TEST_CASE("async_json_file_mt writes JSON after flush [sink][json][async]") {
 
 TEST_CASE("json_formatter stress formats many lines quickly [formatter][json][stress]") {
     json_formatter fmt;
-    details::log_msg msg("bench", level::info, std::string(128, 'x'));
+    const auto payload = std::string(128, 'x');
+    details::log_msg msg("bench", level::info, payload);
     constexpr int kCount = 8000;
     const auto start = std::chrono::steady_clock::now();
     std::size_t bytes = 0;
@@ -455,7 +456,8 @@ TEST_CASE("json_formatter stress formats many lines quickly [formatter][json][st
 
 TEST_CASE("json_formatter stress large payloads [formatter][json][stress]") {
     json_formatter fmt;
-    details::log_msg msg("big", level::info, std::string(2048, 'Y'));
+    const auto payload = std::string(2048, 'Y');
+    details::log_msg msg("big", level::info, payload);
     constexpr int kCount = 400;
     const auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < kCount; ++i) {
