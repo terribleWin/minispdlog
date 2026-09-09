@@ -7,6 +7,7 @@
 #include "rotating_file_sink.h"
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -24,16 +25,41 @@ class json_sink_wrapper : public BaseSink {
 private:
     bool force_json_ = true;
 
+    json_formatter* live_json_() {
+        return dynamic_cast<json_formatter*>(this->formatter_.get());
+    }
+
+    void keep_json_formatter_() {
+        json_formatter proto;
+        if (auto* cur = live_json_()) {
+            proto = *cur;
+        }
+        this->base_sink<Mutex>::set_formatter(std::make_unique<json_formatter>(std::move(proto)));
+    }
+
 public:
     template <typename... Args>
-    explicit json_sink_wrapper(Args&&... args) 
+    explicit json_sink_wrapper(Args&&... args)
         : BaseSink(std::forward<Args>(args)...) {
         set_json_formatter(*this);
     }
 
+    // Live formatter. Configure resource fields before concurrent logging.
+    json_formatter& json() {
+        if (auto* fmt = live_json_()) {
+            return *fmt;
+        }
+        if (!force_json_) {
+            throw std::logic_error(
+                "json() requires a json_formatter (custom formatting is enabled)");
+        }
+        set_json_formatter(*this);
+        return *live_json_();
+    }
+
     void set_pattern(std::string pattern) override {
         if (force_json_) {
-            set_json_formatter(*this);
+            keep_json_formatter_();
         } else {
             BaseSink::set_pattern(std::move(pattern));
         }
@@ -41,7 +67,7 @@ public:
 
     void set_formatter(std::unique_ptr<formatter> fmt) override {
         if (force_json_) {
-            set_json_formatter(*this);
+            keep_json_formatter_();
         } else {
             BaseSink::set_formatter(std::move(fmt));
         }

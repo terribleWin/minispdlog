@@ -207,8 +207,10 @@ inline std::shared_ptr<logger> async_json_file_mt(
     const std::string& filename,
     bool truncate,
     async_overflow_policy overflow_policy = async_overflow_policy::block,
-    batch_config cfg = {}) {
+    batch_config cfg = {},
+    json_formatter fmt = {}) {
     auto sink = std::make_shared<sinks::json_file_sink_mt>(filename, truncate, cfg);
+    sink->json() = std::move(fmt);
     std::vector<sinks::sink_ptr> sinks = {std::move(sink)};
     auto new_logger =
         std::make_shared<async_logger>(logger_name, std::move(sinks), overflow_policy);
@@ -221,8 +223,10 @@ inline std::shared_ptr<logger> async_json_rotating_mt(
     const std::string& filename,
     std::size_t max_size,
     std::size_t max_files,
-    async_overflow_policy overflow_policy = async_overflow_policy::block) {
+    async_overflow_policy overflow_policy = async_overflow_policy::block,
+    json_formatter fmt = {}) {
     auto sink = std::make_shared<sinks::json_rotating_file_sink_mt>(filename, max_size, max_files);
+    sink->json() = std::move(fmt);
     std::vector<sinks::sink_ptr> sinks = {std::move(sink)};
     auto new_logger =
         std::make_shared<async_logger>(logger_name, std::move(sinks), overflow_policy);

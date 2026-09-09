@@ -59,6 +59,27 @@ size_t get_pid() {
     return pid;
 }
 
+const std::string& get_hostname() {
+    static const std::string host = []() {
+        char buf[256]{};
+#ifdef _WIN32
+        DWORD n = static_cast<DWORD>(sizeof(buf));
+        if (::GetComputerNameA(buf, &n) != 0 && buf[0] != '\0') {
+            return std::string(buf);
+        }
+#else
+        if (::gethostname(buf, sizeof(buf)) == 0) {
+            buf[sizeof(buf) - 1] = '\0';
+            if (buf[0] != '\0') {
+                return std::string(buf);
+            }
+        }
+#endif
+        return std::string("unknown");
+    }();
+    return host;
+}
+
 std::string& ltrim(std::string& s) {
     s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
         return !std::isspace(ch);

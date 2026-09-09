@@ -133,5 +133,38 @@ struct wall_clock_cache {
     }
 };
 
+// "YYYY-MM-DDTHH:MM:SS" rebuilt at most once per UTC second (ISO-8601 / RFC 3339).
+struct utc_iso_cache {
+    std::chrono::seconds secs{std::chrono::seconds{-1}};
+    char ymd_hms[20]{};
+
+    void refresh(const log_clock::time_point& tp) {
+        const auto next = std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch());
+        if (next == secs && ymd_hms[0] != '\0') {
+            return;
+        }
+        const auto time_t_val = log_clock::to_time_t(tp);
+        std::tm tm{};
+#ifdef _WIN32
+        gmtime_s(&tm, &time_t_val);
+#else
+        gmtime_r(&time_t_val, &tm);
+#endif
+        write4(ymd_hms, tm.tm_year + 1900);
+        ymd_hms[4] = '-';
+        write2(ymd_hms + 5, tm.tm_mon + 1);
+        ymd_hms[7] = '-';
+        write2(ymd_hms + 8, tm.tm_mday);
+        ymd_hms[10] = 'T';
+        write2(ymd_hms + 11, tm.tm_hour);
+        ymd_hms[13] = ':';
+        write2(ymd_hms + 14, tm.tm_min);
+        ymd_hms[16] = ':';
+        write2(ymd_hms + 17, tm.tm_sec);
+        ymd_hms[19] = '\0';
+        secs = next;
+    }
+};
+
 } // namespace details
 } // namespace minispdlog

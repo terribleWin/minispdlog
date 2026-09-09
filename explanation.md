@@ -342,9 +342,9 @@ minispdlog::shutdown();
 
 ### 5.4 JSON Lines
 
-`json_formatter` 每条日志一行对象，字段：`time`（本地墙钟 `YYYY-MM-DD HH:MM:SS.mmm`，按秒缓存日历部分）、`ts`（Unix epoch 毫秒）、`level`、`logger`、`msg`、`tid`、`pid`；`source` 仅在 `source_loc` 非空时出现。字符串按 RFC 8259 转义。文件类 `json_file_sink` 走 `buffered_file_sink`（批量双缓冲、WAL、LF）。
+`json_formatter` 每条日志一行对象，字段：`time`（UTC ISO-8601 `YYYY-MM-DDTHH:MM:SS.mmmZ`，按秒缓存日历部分）、`ts`（Unix epoch 毫秒）、`level`、`level_num`（与 `level` 枚举相同）、`logger`、`msg`、`tid`、`pid`；`source` 仅在 `source_loc` 非空时出现。字符串按 RFC 8259 转义，连续非转义字节整段拷贝，并转义 U+2028 / U+2029（NDJSON / `JSON.parse`）。`add` / `add_int` / `add_bool` / `add_null` / `with_host()` 写入静态资源字段，clone 与 `json_*` sink 的 `set_pattern` 会保留它们。文件类 `json_file_sink` 走 `buffered_file_sink`（批量双缓冲、WAL、LF）。
 
-工厂：`json_logger_mt/st`、`rotating_json_logger_mt/st`、`daily_json_logger_mt/st`、`stdout_json_mt/st`、`stderr_json_mt/st`、`async_json_file_mt`、`async_json_rotating_mt`。`json_logger_*` / `async_json_file_mt` 可传 `batch_config`。
+工厂：`json_logger_mt/st`、`rotating_json_logger_mt/st`、`daily_json_logger_mt/st`、`stdout_json_mt/st`、`stderr_json_mt/st`、`async_json_file_mt`、`async_json_rotating_mt`。末参可传 `json_formatter`。`json_logger_*` / `async_json_file_mt` 可传 `batch_config`。`sink->json()` 在开始打日志前改资源字段。
 
 ### 5.5 批量写入、双缓冲与崩溃找回
 

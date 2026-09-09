@@ -185,8 +185,10 @@ namespace minispdlog{
         const std::string& logger_name,
         const std::string& filename,
         bool truncate = false,
-        batch_config cfg = {}) {
+        batch_config cfg = {},
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_file_sink_mt>(filename, truncate, cfg);
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
@@ -195,32 +197,46 @@ namespace minispdlog{
         const std::string& logger_name,
         const std::string& filename,
         bool truncate = false,
-        batch_config cfg = {}) {
+        batch_config cfg = {},
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_file_sink_st>(filename, truncate, cfg);
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
     }
-    inline std::shared_ptr<logger> stdout_json_mt(const std::string& logger_name) {
+    inline std::shared_ptr<logger> stdout_json_mt(
+        const std::string& logger_name,
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_console_sink_mt>();
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
     }
-    inline std::shared_ptr<logger> stdout_json_st(const std::string& logger_name) {
+    inline std::shared_ptr<logger> stdout_json_st(
+        const std::string& logger_name,
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_console_sink_st>();
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
     }
-    inline std::shared_ptr<logger> stderr_json_mt(const std::string& logger_name) {
+    inline std::shared_ptr<logger> stderr_json_mt(
+        const std::string& logger_name,
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_stderr_sink_mt>();
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
     }
-    inline std::shared_ptr<logger> stderr_json_st(const std::string& logger_name) {
+    inline std::shared_ptr<logger> stderr_json_st(
+        const std::string& logger_name,
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_stderr_sink_st>();
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
@@ -229,8 +245,10 @@ namespace minispdlog{
         const std::string& logger_name,
         const std::string& filename,
         std::size_t max_size,
-        std::size_t max_files) {
+        std::size_t max_files,
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_rotating_file_sink_mt>(filename, max_size, max_files);
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
@@ -239,8 +257,10 @@ namespace minispdlog{
         const std::string& logger_name,
         const std::string& filename,
         std::size_t max_size,
-        std::size_t max_files) {
+        std::size_t max_files,
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_rotating_file_sink_st>(filename, max_size, max_files);
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
@@ -251,9 +271,11 @@ namespace minispdlog{
         int rotation_hour = 0,
         int rotation_minute = 0,
         bool truncate = false,
-        std::size_t max_files = 0) {
+        std::size_t max_files = 0,
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_daily_file_sink_mt>(
             filename, rotation_hour, rotation_minute, truncate, max_files);
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;
@@ -264,9 +286,11 @@ namespace minispdlog{
         int rotation_hour = 0,
         int rotation_minute = 0,
         bool truncate = false,
-        std::size_t max_files = 0) {
+        std::size_t max_files = 0,
+        json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_daily_file_sink_st>(
             filename, rotation_hour, rotation_minute, truncate, max_files);
+        sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);
         return new_logger;

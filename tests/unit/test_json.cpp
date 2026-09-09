@@ -35,6 +35,12 @@ std::string format_json(const details::log_msg& msg) {
     return {buf.data(), buf.size()};
 }
 
+std::string format_json_with(json_formatter& fmt, const details::log_msg& msg) {
+    fmt::memory_buffer buf;
+    fmt.format(msg, buf);
+    return {buf.data(), buf.size()};
+}
+
 std::string read_file(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
@@ -62,6 +68,7 @@ void require_json_object_line(const std::string& line) {
     REQUIRE(line.find("\"time\":") != std::string::npos);
     REQUIRE(line.find("\"ts\":") != std::string::npos);
     REQUIRE(line.find("\"level\":") != std::string::npos);
+    REQUIRE(line.find("\"level_num\":") != std::string::npos);
     REQUIRE(line.find("\"logger\":") != std::string::npos);
     REQUIRE(line.find("\"msg\":") != std::string::npos);
     REQUIRE(line.find("\"tid\":") != std::string::npos);
@@ -87,13 +94,24 @@ std::tm local_tm_of(log_clock::time_point tp) {
     return out;
 }
 
+std::tm utc_tm_of(log_clock::time_point tp) {
+    const auto time = log_clock::to_time_t(tp);
+    std::tm out{};
+#ifdef _WIN32
+    gmtime_s(&out, &time);
+#else
+    gmtime_r(&time, &out);
+#endif
+    return out;
+}
+
 std::string expected_time_field(log_clock::time_point tp) {
-    const auto tm = local_tm_of(tp);
+    const auto tm = utc_tm_of(tp);
     const auto duration = tp.time_since_epoch();
     const auto secs = std::chrono::duration_cast<std::chrono::seconds>(duration);
     const int ms = static_cast<int>(
         std::chrono::duration_cast<std::chrono::milliseconds>(duration - secs).count());
-    return fmt::format("\"time\":\"{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}\"",
+    return fmt::format("\"time\":\"{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}.{:03d}Z\"",
                        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                        tm.tm_sec, ms);
 }
@@ -162,15 +180,18 @@ std::string json_number_field(const std::string& line, std::string_view key) {
 void require_file_record_shape(const std::string& line) {
     require_json_object_line(line);
     const auto time = json_quoted_field(line, "time");
-    REQUIRE(time.size() == 23);
+    REQUIRE(time.size() == 24);
     REQUIRE(time[4] == '-');
     REQUIRE(time[7] == '-');
-    REQUIRE(time[10] == ' ');
+    REQUIRE(time[10] == 'T');
     REQUIRE(time[13] == ':');
     REQUIRE(time[16] == ':');
     REQUIRE(time[19] == '.');
+    REQUIRE(time[23] == 'Z');
     REQUIRE(is_digits(time.substr(0, 4)));
+    REQUIRE(is_digits(time.substr(20, 3)));
     REQUIRE(is_digits(json_number_field(line, "ts")));
+    REQUIRE(is_digits(json_number_field(line, "level_num")));
     REQUIRE(is_digits(json_number_field(line, "tid")));
     REQUIRE(is_digits(json_number_field(line, "pid")));
     REQUIRE_FALSE(json_quoted_field(line, "level").empty());
@@ -204,6 +225,8 @@ TEST_CASE("json_formatter emits every level name [formatter][json]") {
         details::log_msg msg("lv", lvl, "x");
         const auto line = format_json(msg);
         REQUIRE(line.find(std::string("\"level\":\"") + name + "\"") != std::string::npos);
+        REQUIRE(json_number_field(line.substr(0, line.size() - 1), "level_num") ==
+                std::to_string(static_cast<int>(lvl)));
     }
 }
 
@@ -267,6 +290,17 @@ TEST_CASE("json_formatter source with null file and func [formatter][json]") {
     details::log_msg msg(loc, "svc", level::info, "x");
     const auto line = format_json(msg);
     REQUIRE(line.find("\"source\":{\"file\":\"\",\"line\":9,\"func\":\"\"}") != std::string::npos);
+}
+
+TEST_CASE("json_formatter escapes unicode line separators [formatter][json]") {
+    std::string payload = "a";
+    payload += "\xE2\x80\xA8";
+    payload += "b";
+    payload += "\xE2\x80\xA9";
+    payload += "c";
+    details::log_msg msg("lg", level::info, payload);
+    const auto line = format_json(msg);
+    REQUIRE(line.find("\"msg\":\"a\\u2028b\\u2029c\"") != std::string::npos);
 }
 
 TEST_CASE("json_formatter clone matches original [formatter][json]") {
@@ -522,7 +556,7 @@ TEST_CASE("async_json_file_mt burst completes after flush [sink][json][async][st
     REQUIRE(text.find("\"msg\":\"burst-999\"") != std::string::npos);
 }
 
-TEST_CASE("json_formatter wall time is localtime of log_msg [formatter][json]") {
+TEST_CASE("json_formatter wall time is UTC ISO-8601 of log_msg [formatter][json]") {
     const auto tp = log_clock::now();
     details::log_msg msg(tp, details::source_loc{}, "lg", level::info, "now");
     const auto line = format_json(msg);
@@ -543,8 +577,8 @@ TEST_CASE("json_formatter reuses wall clock within the same second [formatter][j
     const auto line2 = std::string(second.data(), second.size());
     REQUIRE(line1.find("\"time\":\"") != std::string::npos);
     REQUIRE(line1.substr(0, 28) == line2.substr(0, 28));
-    REQUIRE(line1.find(".000\"") != std::string::npos);
-    REQUIRE(line2.find(".250\"") != std::string::npos);
+    REQUIRE(line1.find(".000Z\"") != std::string::npos);
+    REQUIRE(line2.find(".250Z\"") != std::string::npos);
 }
 
 TEST_CASE("json_file_sink writes LF-only NDJSON [sink][json]") {
@@ -768,4 +802,97 @@ TEST_CASE("json_logger_mt file is usable NDJSON after sourced info [sink][json][
     REQUIRE(json_quoted_field(line, "logger") == "usable");
     REQUIRE(line.find("\"source\":{") != std::string::npos);
     drop("usable");
+}
+
+TEST_CASE("json_formatter resource fields survive clone [formatter][json]") {
+    json_formatter fmt;
+    fmt.add("service", "checkout");
+    fmt.add_int("shard", 3);
+    fmt.add_bool("canary", false);
+    fmt.add_null("trace_id");
+    auto cloned = fmt.clone();
+    details::log_msg msg("n", level::info, "x");
+    fmt::memory_buffer a;
+    fmt::memory_buffer b;
+    fmt.format(msg, a);
+    cloned->format(msg, b);
+    const auto line = std::string(a.data(), a.size());
+    REQUIRE(std::string(a.data(), a.size()) == std::string(b.data(), b.size()));
+    REQUIRE(json_quoted_field(line, "service") == "checkout");
+    REQUIRE(json_number_field(line, "shard") == "3");
+    REQUIRE(line.find("\"canary\":false") != std::string::npos);
+    REQUIRE(line.find("\"trace_id\":null") != std::string::npos);
+}
+
+TEST_CASE("json_formatter skips reserved and empty resource keys [formatter][json]") {
+    json_formatter fmt;
+    fmt.add("msg", "nope");
+    fmt.add("", "empty-key");
+    fmt.add("service", "api");
+    fmt.add("service", "checkout");
+    details::log_msg msg("n", level::warn, "payload");
+    const auto line = format_json_with(fmt, msg);
+
+    REQUIRE(json_quoted_field(line, "msg") == "payload");
+    REQUIRE(line.find("\"msg\":\"nope\"") == std::string::npos);
+    REQUIRE(line.find("\"\":\"empty-key\"") == std::string::npos);
+    REQUIRE(json_quoted_field(line, "service") == "checkout");
+    std::size_t hits = 0;
+    for (std::size_t pos = 0;
+         (pos = line.find("\"service\":", pos)) != std::string::npos;
+         pos += 10) {
+        ++hits;
+    }
+    REQUIRE(hits == 1);
+}
+
+TEST_CASE("json_formatter with_host adds host [formatter][json]") {
+    json_formatter fmt;
+    fmt.with_host();
+    details::log_msg msg("n", level::info, "x");
+    fmt::memory_buffer buf;
+    fmt.format(msg, buf);
+    const auto line = std::string(buf.data(), buf.size());
+    REQUIRE_FALSE(json_quoted_field(line, "host").empty());
+}
+
+TEST_CASE("json_file_sink json() context survives set_pattern [sink][json]") {
+    test_fixture fx;
+    const auto path = fx.temp_path("ctx.json.log").string();
+    auto sink = std::make_shared<sinks::json_file_sink_st>(path, true);
+    sink->json().add("service", "api").add_int("schema", 1);
+    logger lg("ctx", sink);
+    lg.set_pattern("[%L] %v");
+    lg.info("kept");
+    lg.flush();
+    const auto line = json_lines(read_file(path)).at(0);
+    require_file_record_shape(line);
+    REQUIRE(json_quoted_field(line, "msg") == "kept");
+    REQUIRE(json_quoted_field(line, "service") == "api");
+    REQUIRE(json_number_field(line, "schema") == "1");
+    REQUIRE(line.find("[info]") == std::string::npos);
+}
+
+TEST_CASE("json_logger_mt factory installs resource fields [sink][json][registry]") {
+    test_fixture fx;
+    const auto path = fx.temp_path("factory-fields.json.log").string();
+    json_formatter fmt;
+    fmt.add("env", "test");
+    auto lg = json_logger_mt("json-fields", path, true, batch_config::until_flush(), std::move(fmt));
+    lg->info("from-factory");
+    lg->flush();
+    const auto line = json_lines(read_file(path)).at(0);
+    require_file_record_shape(line);
+    REQUIRE(json_quoted_field(line, "msg") == "from-factory");
+    REQUIRE(json_quoted_field(line, "env") == "test");
+    drop("json-fields");
+}
+
+TEST_CASE("json() throws after custom formatting is enabled [sink][json]") {
+    test_fixture fx;
+    const auto path = fx.temp_path("unlock-json.log").string();
+    auto sink = std::make_shared<sinks::json_file_sink_st>(path, true, batch_config::until_flush());
+    sink->allow_custom_formatting(true);
+    sink->set_pattern("%v");
+    REQUIRE_THROWS_AS(sink->json(), std::logic_error);
 }

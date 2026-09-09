@@ -81,7 +81,7 @@ int main() {
 }
 ```
 
-结构化 JSON Lines（每行一个对象，给采集器 / ELK / Loki）：
+结构化 JSON Lines（每行一个对象，给 Filebeat / ELK / Loki；UTC 时间 + 资源字段）：
 
 ```cpp
 #include <minispdlog/minispdlog.h>
@@ -89,14 +89,18 @@ int main() {
 
 int main() {
     std::filesystem::create_directories("logs");
-    auto lg = minispdlog::json_logger_mt("app", "logs/app.json.log", true);
+    minispdlog::json_formatter fields;
+    fields.add("service", "checkout").add("env", "prod").with_host();
+    auto lg = minispdlog::json_logger_mt("app", "logs/app.json.log", true, {}, fields);
     lg->info("user {} login", 42);
     lg->flush();
     return 0;
 }
 ```
 
-任意 sink 也可只换 formatter：`sink->set_formatter(std::make_unique<minispdlog::json_formatter>());`。生产路径用专用 sink，`set_pattern` / `set_formatter` 都锁在 JSON Lines：`json_logger_mt`（双缓冲批量写、LF 换行）、`rotating_json_logger_mt`、`daily_json_logger_mt`，容器 stdout/stderr 用 `stdout_json_mt` / `stderr_json_mt`。异步：`async_json_file_mt` / `async_json_rotating_mt`。
+每行核心字段：`time`（UTC ISO-8601，`YYYY-MM-DDTHH:MM:SS.mmmZ`）、`ts`（Unix epoch 毫秒，方便数值过滤）、`level`、`level_num`（与 `minispdlog::level` 相同：trace=0 … off=6）、`logger`、`msg`、`tid`、`pid`；有源码位置时带 `source`。字符串按 RFC 8259 转义，并额外转义 U+2028 / U+2029，保证一行仍是一个 JSON 值。`add` / `add_int` / `add_bool` / `add_null` / `with_host()` 写入静态资源字段（service、env、host 等），采集侧可当 ECS `service.name` / `host.name` 用。不要占用 `time`/`ts`/`level`/`level_num`/`logger`/`msg`/`tid`/`pid`/`source`。也可 `sink->json().add(...)`，在开始打日志前配置。
+
+任意 sink 也可只换 formatter：`sink->set_formatter(std::make_unique<minispdlog::json_formatter>());`。生产路径用专用 sink，`set_pattern` / `set_formatter` 都锁在 JSON Lines，且会保留已配置的资源字段：`json_logger_mt`（双缓冲批量写、LF 换行）、`rotating_json_logger_mt`、`daily_json_logger_mt`，容器 stdout/stderr 用 `stdout_json_mt` / `stderr_json_mt`。异步：`async_json_file_mt` / `async_json_rotating_mt`。
 
 批量写入 + 双缓冲 + 崩溃找回（`buffered_file_sink`；`json_file_sink` 走同一套）：
 
@@ -288,7 +292,7 @@ logs/demo_rotating.3.log
 
 ### 2. `examples/json_log` — JSON Lines 文件（默认会编）
 
-演示 `json_file_sink`（`FILE*` 二进制 NDJSON）和 `rotating_json_logger_mt`：每条一行 JSON，含 time/ts/level/logger/msg，滚动后仍是 JSON，不会被 `set_pattern` 改回文本。
+演示 `json_file_sink`（`FILE*` 二进制 NDJSON）和 `rotating_json_logger_mt`：每条一行 JSON（UTC `time`、`ts`、`level_num`、资源字段），滚动后仍是 JSON，不会被 `set_pattern` 改回文本。
 
 ```bash
 cmake --build build --target json_log_demo -j$(nproc)
@@ -447,7 +451,7 @@ logger->log(minispdlog::level::info, "hello {}", name);  // 一条 log 即可输
 
 同一场景用同一套分隔：日期 `%Y-%m-%d`，时间 `%H:%M:%S.%e`（微秒用 `%f` 替代 `%e`），源码 `%s:%#` / `%@`，字段 `[..] [..]`。`%^`…`%$` 包住要上色的片段（默认只包 `%L`）。`log()` / `info()` 会填充时间、线程、进程和源码位置。
 
-结构化输出用 `json_formatter`（字段：`time` / `ts` / `level` / `logger` / `msg` / `tid` / `pid`，有源码位置时带 `source`），不要用 pattern 去「手拼 JSON」。
+结构化输出用 `json_formatter`（字段：UTC `time` / `ts` / `level` / `level_num` / `logger` / `msg` / `tid` / `pid`，有源码位置时带 `source`；资源字段用 `add` / `with_host`），不要用 pattern 去「手拼 JSON」。
 
 分层与异步热路径细节见 [`explanation.md`](explanation.md)。
 
