@@ -43,6 +43,10 @@ void pattern_formatter::push_literal_(std::string& raw) {
 }
 
 void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& dest) {
+    if (default_layout_) {
+        format_default_(msg, dest);
+        return;
+    }
     msg.color_range_start = 0;
     msg.color_range_end = 0;
     if (needs_calendar_) {
@@ -82,9 +86,11 @@ void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& 
             case piece_kind::level_short:
                 dest.push_back(*level_to_short_string(msg.lvl));
                 break;
-            case piece_kind::level_full:
-                append_str(dest, level_to_string(msg.lvl));
+            case piece_kind::level_full: {
+                const auto name = level_to_string_view(msg.lvl);
+                dest.append(name.data(), name.data() + name.size());
                 break;
+            }
             case piece_kind::name:
                 dest.append(msg.logger_name.data(),
                             msg.logger_name.data() + msg.logger_name.size());
@@ -136,6 +142,30 @@ void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& 
     dest.push_back('\n');
 }
 
+void pattern_formatter::format_default_(const details::log_msg& msg, fmt::memory_buffer& dest) {
+    // "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] %v\n"
+    clock_.refresh(msg.time);
+    dest.push_back('[');
+    details::append_raw(dest, clock_.ymd_hms, 19);
+    dest.push_back('.');
+    details::append_padded3(dest, details::millis_of_second(msg.time));
+    dest.push_back(']');
+    dest.push_back(' ');
+    dest.push_back('[');
+    dest.append(msg.logger_name.data(), msg.logger_name.data() + msg.logger_name.size());
+    dest.push_back(']');
+    dest.push_back(' ');
+    dest.push_back('[');
+    msg.color_range_start = dest.size();
+    const auto lvl = level_to_string_view(msg.lvl);
+    dest.append(lvl.data(), lvl.data() + lvl.size());
+    msg.color_range_end = dest.size();
+    dest.push_back(']');
+    dest.push_back(' ');
+    dest.append(msg.payload.data(), msg.payload.data() + msg.payload.size());
+    dest.push_back('\n');
+}
+
 std::unique_ptr<formatter> pattern_formatter::clone() const {
     return std::make_unique<pattern_formatter>(pattern_);
 }
@@ -145,6 +175,7 @@ void pattern_formatter::set_pattern(std::string pattern) {
     pieces_.clear();
     literals_.clear();
     needs_calendar_ = false;
+    default_layout_ = false;
     compile_pattern();
 }
 
@@ -237,6 +268,7 @@ void pattern_formatter::compile_pattern() {
         }
     }
     push_literal_(raw_str);
+    default_layout_ = (pattern_ == default_pattern);
 }
 
 }  // namespace minispdlog

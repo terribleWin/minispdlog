@@ -14,6 +14,7 @@ enum class level{
 };
 MINISPDLOG_API const char* level_to_string(level lv1) noexcept;
 MINISPDLOG_API const char* level_to_short_string(level lv1) noexcept;
+MINISPDLOG_API std::string_view level_to_string_view(level lvl) noexcept;
 MINISPDLOG_API level string_to_level(const std::string& str);
 inline bool should_log(level logger_level, level msg_level) noexcept{
 	return msg_level >= logger_level;

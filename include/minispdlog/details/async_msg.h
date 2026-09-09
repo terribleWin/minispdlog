@@ -28,7 +28,8 @@ struct log_msg_buffer : log_msg {
 
     log_msg_buffer() = default;
 
-    explicit log_msg_buffer(const log_msg& msg) { copy_from(msg); }
+    explicit log_msg_buffer(const log_msg& msg) { copy_from(msg, true); }
+    log_msg_buffer(const log_msg& msg, bool copy_name) { copy_from(msg, copy_name); }
 
     log_msg_buffer(log_msg_buffer&& other) noexcept { move_from(std::move(other)); }
 
@@ -43,26 +44,40 @@ struct log_msg_buffer : log_msg {
     log_msg_buffer& operator=(const log_msg_buffer&) = delete;
 
 protected:
-    void copy_from(const log_msg& msg) {
+    void copy_from(const log_msg& msg, bool copy_name) {
         const auto name_len = msg.logger_name.size();
         const auto payload_len = msg.payload.size();
         static_cast<log_msg&>(*this) = msg;
         buffer_.clear();
-        if (name_len != 0 && msg.logger_name.data() != nullptr) {
+        if (copy_name && name_len != 0 && msg.logger_name.data() != nullptr) {
             buffer_.append(msg.logger_name.data(), msg.logger_name.data() + name_len);
         }
         if (payload_len != 0 && msg.payload.data() != nullptr) {
             buffer_.append(msg.payload.data(), msg.payload.data() + payload_len);
         }
-        rebase(name_len, payload_len);
+        if (copy_name) {
+            rebase(name_len, payload_len);
+        } else {
+            payload = string_view_t(buffer_.data(), payload_len);
+        }
     }
 
     void move_from(log_msg_buffer&& other) noexcept {
         const auto name_len = other.logger_name.size();
         const auto payload_len = other.payload.size();
+        const char* old_buf = other.buffer_.data();
+        const char* old_name = other.logger_name.data();
+        const bool name_in_buf =
+            old_name != nullptr && old_buf != nullptr && old_name >= old_buf &&
+            old_name < old_buf + other.buffer_.size();
+
         static_cast<log_msg&>(*this) = static_cast<log_msg&&>(other);
         buffer_ = std::move(other.buffer_);
-        rebase(name_len, payload_len);
+        if (name_in_buf) {
+            rebase(name_len, payload_len);
+        } else {
+            payload = string_view_t(buffer_.data(), payload_len);
+        }
         other.logger_name = {};
         other.payload = {};
     }
@@ -125,12 +140,12 @@ struct async_msg : log_msg_buffer {
     }
 
     async_msg(async_msg_type type, logger* worker_ptr, const log_msg& msg)
-        : log_msg_buffer(msg)
+        : log_msg_buffer(msg, false)
         , msg_type(type)
         , worker(worker_ptr) {}
 
     async_msg(async_msg_type type, std::shared_ptr<logger>&& worker_ptr, const log_msg& msg)
-        : log_msg_buffer(msg)
+        : log_msg_buffer(msg, false)
         , msg_type(type)
         , worker(worker_ptr.get())
         , keep_alive(std::move(worker_ptr)) {}

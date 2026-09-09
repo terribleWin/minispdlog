@@ -4,15 +4,15 @@
 
 namespace minispdlog {
 
-static constexpr std::array<const char*, 7> level_names = {
+static constexpr std::array<std::string_view, 7> level_names = {
     "trace", "debug", "info", "warn", "error", "critical", "off"
 };
 
-static constexpr std::array<const char*, 7> level_short_names = {
+static constexpr std::array<std::string_view, 7> level_short_names = {
     "T", "D", "I", "W", "E", "C", "O"
 };
 
-const char* level_to_string(level lvl) noexcept {
+std::string_view level_to_string_view(level lvl) noexcept {
     auto index = static_cast<size_t>(lvl);
     if (index < level_names.size()) {
         return level_names[index];
@@ -20,10 +20,14 @@ const char* level_to_string(level lvl) noexcept {
     return "unknown";
 }
 
+const char* level_to_string(level lvl) noexcept {
+    return level_to_string_view(lvl).data();
+}
+
 const char* level_to_short_string(level lvl) noexcept {
     auto index = static_cast<size_t>(lvl);
     if (index < level_short_names.size()) {
-        return level_short_names[index];
+        return level_short_names[index].data();
     }
     return "U";
 }

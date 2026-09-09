@@ -66,11 +66,13 @@ namespace minispdlog {
 
             void compile_pattern();
             void push_literal_(std::string& raw);
+            void format_default_(const details::log_msg& msg, fmt::memory_buffer& dest);
 
             std::string pattern_;
             std::vector<piece> pieces_;
             std::vector<std::string> literals_;
             details::wall_clock_cache clock_{};
             bool needs_calendar_{false};
+            bool default_layout_{false};
     };
 }

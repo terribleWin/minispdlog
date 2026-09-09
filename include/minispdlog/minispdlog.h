@@ -311,33 +311,33 @@ namespace minispdlog{
 
     //全局日志接口（sourced_fmt 在调用点捕获源码位置，再交给 logger::log）
     template<typename... Args>
-    inline void trace(details::sourced_fmt srcfmt, Args&&... args) {
-        default_logger()->log(level::trace, srcfmt, std::forward<Args>(args)...);
+    inline void trace(details::sourced_fmt<std::type_identity_t<Args>...> srcfmt, Args&&... args) {
+        default_logger()->log(level::trace, srcfmt.loc, srcfmt.fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void debug(details::sourced_fmt srcfmt, Args&&... args) {
-        default_logger()->log(level::debug, srcfmt, std::forward<Args>(args)...);
+    inline void debug(details::sourced_fmt<std::type_identity_t<Args>...> srcfmt, Args&&... args) {
+        default_logger()->log(level::debug, srcfmt.loc, srcfmt.fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void info(details::sourced_fmt srcfmt, Args&&... args) {
-        default_logger()->log(level::info, srcfmt, std::forward<Args>(args)...);
+    inline void info(details::sourced_fmt<std::type_identity_t<Args>...> srcfmt, Args&&... args) {
+        default_logger()->log(level::info, srcfmt.loc, srcfmt.fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void warn(details::sourced_fmt srcfmt, Args&&... args) {
-        default_logger()->log(level::warn, srcfmt, std::forward<Args>(args)...);
+    inline void warn(details::sourced_fmt<std::type_identity_t<Args>...> srcfmt, Args&&... args) {
+        default_logger()->log(level::warn, srcfmt.loc, srcfmt.fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void error(details::sourced_fmt srcfmt, Args&&... args) {
-        default_logger()->log(level::error, srcfmt, std::forward<Args>(args)...);
+    inline void error(details::sourced_fmt<std::type_identity_t<Args>...> srcfmt, Args&&... args) {
+        default_logger()->log(level::error, srcfmt.loc, srcfmt.fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    inline void critical(details::sourced_fmt srcfmt, Args&&... args) {
-        default_logger()->log(level::critical, srcfmt, std::forward<Args>(args)...);
+    inline void critical(details::sourced_fmt<std::type_identity_t<Args>...> srcfmt, Args&&... args) {
+        default_logger()->log(level::critical, srcfmt.loc, srcfmt.fmt, std::forward<Args>(args)...);
     }
 
 // ========== 编译期日志宏（Release 下零开销，并在调用点填充源码位置） ==========

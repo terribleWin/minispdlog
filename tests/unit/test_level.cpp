@@ -31,6 +31,12 @@ TEST_CASE("level_to_string converts all levels correctly [level]") {
     REQUIRE(std::string(level_to_string(level::off))      == "off");
 }
 
+TEST_CASE("level_to_string_view matches level_to_string [level]") {
+    REQUIRE(level_to_string_view(level::info) == "info");
+    REQUIRE(level_to_string_view(level::critical).size() == 8);
+    REQUIRE(level_to_string_view(static_cast<level>(99)) == "unknown");
+}
+
 TEST_CASE("level_to_short_string converts all levels correctly [level]") {
     REQUIRE(std::string(level_to_short_string(level::trace))    == "T");
     REQUIRE(std::string(level_to_short_string(level::debug))    == "D");

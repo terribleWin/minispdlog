@@ -4,18 +4,15 @@
 
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 
 namespace minispdlog {
 namespace {
 
 constexpr char kHex[] = "0123456789abcdef";
 
-void append_cstr(fmt::memory_buffer& dest, const char* text) {
-    if (text == nullptr) {
-        return;
-    }
-    details::append_raw(dest, text, std::strlen(text));
+template <std::size_t N>
+void append_lit(fmt::memory_buffer& dest, const char (&text)[N]) {
+    details::append_raw(dest, text, N - 1);
 }
 
 void append_escaped(fmt::memory_buffer& dest, string_view_t text) {
@@ -23,29 +20,29 @@ void append_escaped(fmt::memory_buffer& dest, string_view_t text) {
     for (unsigned char c : text) {
         switch (c) {
             case '"':
-                append_cstr(dest, "\\\"");
+                append_lit(dest, "\\\"");
                 break;
             case '\\':
-                append_cstr(dest, "\\\\");
+                append_lit(dest, "\\\\");
                 break;
             case '\b':
-                append_cstr(dest, "\\b");
+                append_lit(dest, "\\b");
                 break;
             case '\f':
-                append_cstr(dest, "\\f");
+                append_lit(dest, "\\f");
                 break;
             case '\n':
-                append_cstr(dest, "\\n");
+                append_lit(dest, "\\n");
                 break;
             case '\r':
-                append_cstr(dest, "\\r");
+                append_lit(dest, "\\r");
                 break;
             case '\t':
-                append_cstr(dest, "\\t");
+                append_lit(dest, "\\t");
                 break;
             default:
                 if (c < 0x20) {
-                    append_cstr(dest, "\\u00");
+                    append_lit(dest, "\\u00");
                     dest.push_back(kHex[c >> 4]);
                     dest.push_back(kHex[c & 0x0f]);
                 } else {
@@ -57,13 +54,14 @@ void append_escaped(fmt::memory_buffer& dest, string_view_t text) {
     dest.push_back('"');
 }
 
-void append_key(fmt::memory_buffer& dest, const char* key, bool& first) {
+template <std::size_t N>
+void append_key(fmt::memory_buffer& dest, const char (&key)[N], bool& first) {
     if (!first) {
         dest.push_back(',');
     }
     first = false;
     dest.push_back('"');
-    append_cstr(dest, key);
+    details::append_raw(dest, key, N - 1);
     dest.push_back('"');
     dest.push_back(':');
 }
@@ -92,7 +90,7 @@ void json_formatter::format(const details::log_msg& msg, fmt::memory_buffer& des
     details::append_int64(dest, static_cast<std::int64_t>(ts));
 
     append_key(dest, "level", first);
-    append_escaped(dest, level_to_string(msg.lvl));
+    append_escaped(dest, level_to_string_view(msg.lvl));
 
     append_key(dest, "logger", first);
     append_escaped(dest, msg.logger_name);
