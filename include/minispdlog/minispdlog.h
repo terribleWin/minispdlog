@@ -13,11 +13,13 @@
 #include "sinks/rotating_file_sink.h"
 #include "sinks/daily_file_sink.h"
 #include "sinks/json_sink.h"
+#include "sinks/network_sink.h"
 #include "sinks/callback_sink.h"
 #ifdef MINISPDLOG_WITH_QT
 #include "sinks/qt_sink.h"
 #endif
 #include <fmt/format.h>
+#include <cstdint>
 #include <memory>
 #include <string>
 namespace minispdlog{
@@ -290,6 +292,94 @@ namespace minispdlog{
         json_formatter fmt = {}) {
         auto sink = std::make_shared<sinks::json_daily_file_sink_st>(
             filename, rotation_hour, rotation_minute, truncate, max_files);
+        sink->json() = std::move(fmt);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> udp_logger_mt(
+        const std::string& logger_name,
+        const std::string& host,
+        std::uint16_t port) {
+        auto sink = std::make_shared<sinks::udp_sink_mt>(host, port);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> udp_logger_st(
+        const std::string& logger_name,
+        const std::string& host,
+        std::uint16_t port) {
+        auto sink = std::make_shared<sinks::udp_sink_st>(host, port);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> tcp_logger_mt(
+        const std::string& logger_name,
+        const std::string& host,
+        std::uint16_t port) {
+        auto sink = std::make_shared<sinks::tcp_sink_mt>(host, port);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> tcp_logger_st(
+        const std::string& logger_name,
+        const std::string& host,
+        std::uint16_t port) {
+        auto sink = std::make_shared<sinks::tcp_sink_st>(host, port);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> network_logger_mt(
+        const std::string& logger_name,
+        network_config cfg) {
+        auto sink = std::make_shared<sinks::network_sink_mt>(std::move(cfg));
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> json_udp_logger_mt(
+        const std::string& logger_name,
+        const std::string& host,
+        std::uint16_t port,
+        json_formatter fmt = {}) {
+        auto sink = std::make_shared<sinks::json_udp_sink_mt>(host, port);
+        sink->json() = std::move(fmt);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> json_udp_logger_st(
+        const std::string& logger_name,
+        const std::string& host,
+        std::uint16_t port,
+        json_formatter fmt = {}) {
+        auto sink = std::make_shared<sinks::json_udp_sink_st>(host, port);
+        sink->json() = std::move(fmt);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> json_tcp_logger_mt(
+        const std::string& logger_name,
+        const std::string& host,
+        std::uint16_t port,
+        json_formatter fmt = {}) {
+        auto sink = std::make_shared<sinks::json_tcp_sink_mt>(host, port);
+        sink->json() = std::move(fmt);
+        auto new_logger = std::make_shared<logger>(logger_name, sink);
+        register_logger(new_logger);
+        return new_logger;
+    }
+    inline std::shared_ptr<logger> json_tcp_logger_st(
+        const std::string& logger_name,
+        const std::string& host,
+        std::uint16_t port,
+        json_formatter fmt = {}) {
+        auto sink = std::make_shared<sinks::json_tcp_sink_st>(host, port);
         sink->json() = std::move(fmt);
         auto new_logger = std::make_shared<logger>(logger_name, sink);
         register_logger(new_logger);

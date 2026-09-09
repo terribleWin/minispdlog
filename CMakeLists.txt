@@ -120,6 +120,10 @@ add_subdirectory(examples/callback_log)
 add_subdirectory(examples/buffered_log)
 add_subdirectory(examples/color_log)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(examples/network_log)
+endif()
+
 if(MINISPDLOG_WITH_QT AND MINISPDLOG_QT_FOUND)
     add_subdirectory(examples/qt_log_viewer)
 endif()

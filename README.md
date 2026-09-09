@@ -100,7 +100,7 @@ int main() {
 
 每行核心字段：`time`（UTC ISO-8601，`YYYY-MM-DDTHH:MM:SS.mmmZ`）、`ts`（Unix epoch 毫秒，方便数值过滤）、`level`、`level_num`（与 `minispdlog::level` 相同：trace=0 … off=6）、`logger`、`msg`、`tid`、`pid`；有源码位置时带 `source`。字符串按 RFC 8259 转义，并额外转义 U+2028 / U+2029，保证一行仍是一个 JSON 值。`add` / `add_int` / `add_bool` / `add_null` / `with_host()` 写入静态资源字段（service、env、host 等），采集侧可当 ECS `service.name` / `host.name` 用。不要占用 `time`/`ts`/`level`/`level_num`/`logger`/`msg`/`tid`/`pid`/`source`。也可 `sink->json().add(...)`，在开始打日志前配置。
 
-任意 sink 也可只换 formatter：`sink->set_formatter(std::make_unique<minispdlog::json_formatter>());`。生产路径用专用 sink，`set_pattern` / `set_formatter` 都锁在 JSON Lines，且会保留已配置的资源字段：`json_logger_mt`（双缓冲批量写、LF 换行）、`rotating_json_logger_mt`、`daily_json_logger_mt`，容器 stdout/stderr 用 `stdout_json_mt` / `stderr_json_mt`。异步：`async_json_file_mt` / `async_json_rotating_mt`。
+任意 sink 也可只换 formatter：`sink->set_formatter(std::make_unique<minispdlog::json_formatter>());`。生产路径用专用 sink，`set_pattern` / `set_formatter` 都锁在 JSON Lines，且会保留已配置的资源字段：`json_logger_mt`（双缓冲批量写、LF 换行）、`rotating_json_logger_mt`、`daily_json_logger_mt`，容器 stdout/stderr 用 `stdout_json_mt` / `stderr_json_mt`。异步：`async_json_file_mt` / `async_json_rotating_mt`。JSON 也可走内核网络：`json_udp_logger_mt` / `json_tcp_logger_mt`（Linux）。
 
 批量写入 + 双缓冲 + 崩溃找回（`buffered_file_sink`；`json_file_sink` 走同一套）：
 
@@ -141,6 +141,25 @@ int main() {
 ```
 
 `callback_logger_st` 单线程版；异步用 `async_callback_mt`（`#include <minispdlog/async.h>`）。回调跑在 sink 锁内，不要对同一 sink 再 `log`/`flush`。只要格式化行时用单参数 `void(const std::string&)`。无 Qt 时用回调；有窗口时用 `qt_sink`。
+
+Linux 内核网络（真实 `socket`/`bind`/`connect`/`send`/`recv`，不是模）：
+
+```cpp
+#include <minispdlog/minispdlog.h>
+#include <minispdlog/network.h>
+
+int main() {
+    minispdlog::network_listener collector(minispdlog::network_protocol::udp);
+    auto lg = minispdlog::udp_logger_mt("app", collector.local().host, collector.local().port);
+    lg->info("shipped over UDP");
+    lg->flush();
+    const auto line = collector.recv();  // 内核回环收到的数据报
+    (void)line;
+    return 0;
+}
+```
+
+TCP 用 `tcp_logger_mt` / `json_tcp_logger_mt`（失败会按 `network_config::reconnect` 重连）。采集进程可用 `network_listener`，或把 host/port 指到 syslog / Vector / Fluent Bit。异步：`async_udp_mt` / `async_tcp_mt` / `async_json_udp_mt` / `async_json_tcp_mt`。非 Linux 构造会抛错。
 
 异步文件（业务线程只入队；进程退出前要 `shutdown()`）：
 
@@ -184,6 +203,7 @@ cmake --build build -j$(nproc)          # Windows: cmake --build build --config 
 | 回调 Demo | `build/examples/callback_log_demo` | 见 examples |
 | 批量/找回 Demo | `build/examples/buffered_log_demo` | 见 examples |
 | 彩色 Demo | `build/examples/color_log_demo` | 见 examples |
+| 网络 Demo（Linux） | `build/examples/network_log_demo` | 见 examples |
 | Qt 窗口（可选） | `build/examples/qt_log_viewer/...` | 需 `-DMINISPDLOG_WITH_QT=ON` |
 
 ---
@@ -207,7 +227,7 @@ ctest --test-dir build --output-on-failure
 
 ### 按标签 / 名字过滤（常用）
 
-用例带标签，例如 `[queue]`、`[async]`、`[lockfree]`、`[sink]`、`[daily]`、`[json]`、`[color]`。
+用例带标签，例如 `[queue]`、`[async]`、`[lockfree]`、`[sink]`、`[daily]`、`[json]`、`[color]`、`[network]`。
 
 ```bash
 # 只跑带某标签的用例（注意给参数加引号；PowerShell 里 [json] 可能被当成通配符，改用 -tc）
@@ -344,8 +364,19 @@ cat logs/demo.color.log
 
 源码入口：`examples/color_log/main.cpp`。工厂：`stdout_color_mt`、`stderr_color_mt`、`basic_logger_mt`。
 
-### 6. `examples/qt_log_viewer` — Qt 窗口看日志（可选）
+### 6. `examples/network_log` — Linux 内核 UDP/TCP（仅 Linux 默认编）
 
+演示 `udp_sink` / `json_tcp_logger_mt` 经内核协议栈把日志发到本机 `network_listener`（`bind` + `recv`），并让 UDP sink `try_recv` 读回对端 ACK。
+
+```bash
+cmake --build build --target network_log_demo -j$(nproc)
+cd build
+./examples/network_log_demo
+```
+
+源码入口：`examples/network_log/main.cpp`。工厂：`udp_logger_mt/st`、`tcp_logger_mt/st`、`json_udp_logger_mt/st`、`json_tcp_logger_mt/st`、`network_logger_mt`；异步 `async_udp_mt` / `async_tcp_mt` / `async_json_udp_mt` / `async_json_tcp_mt`。Windows 不编此 example，单测会断言构造抛错。
+
+### 7. `examples/qt_log_viewer` — Qt 窗口看日志（可选
 把日志刷到 `QTextEdit` / `QPlainTextEdit`，依赖 Qt Widgets。
 
 ```bash
@@ -362,7 +393,7 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 说明：
 
 - 无显示器时，单测里的 Qt 用例可用 offscreen；**看窗口**请用本机图形环境（纯 WSL 常缺 GUI）。
-- 未开 `-DMINISPDLOG_WITH_QT=ON` 或不装 Qt 时，**不会**编这个 example，不影响核心库与 `rotating_log_demo` / `json_log_demo` / `callback_log_demo` / `buffered_log_demo` / `color_log_demo`。
+- 未开 `-DMINISPDLOG_WITH_QT=ON` 或不装 Qt 时，**不会**编这个 example，不影响核心库与 `rotating_log_demo` / `json_log_demo` / `callback_log_demo` / `buffered_log_demo` / `color_log_demo` / `network_log_demo`。
 
 ### examples 一览
 
@@ -373,6 +404,7 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 | `examples/callback_log/` | `callback_log_demo` | 是 | 回调旁路（计数 / 告警） |
 | `examples/buffered_log/` | `buffered_log_demo` | 是 | 批量写、双缓冲、WAL/salvage |
 | `examples/color_log/` | `color_log_demo` | 是 | 终端彩色、局部着色、同时写文件 |
+| `examples/network_log/` | `network_log_demo` | 仅 Linux | 内核 UDP/TCP 发送与接收 |
 | `examples/qt_log_viewer/` | `qt_log_viewer` | 需 Qt 选项 | GUI 实时看日志 |
 
 ---
@@ -382,7 +414,7 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 ### 同步日志
 
 - **多级别**：trace / debug / info / warn / error / critical，支持全局与单 logger 过滤
-- **多 Sink**：控制台、文件、按大小滚动、按天切分、JSON Lines、批量双缓冲文件、回调；可选 Qt
+- **多 Sink**：控制台、文件、按大小滚动、按天切分、JSON Lines、批量双缓冲文件、回调、Linux UDP/TCP 网络；可选 Qt
 - **落盘耐久**：`buffered_file_sink` / `json_file_sink` 双缓冲批量 `fwrite`，WAL 回放 + 半截行 salvage；可选 `durability::fsync` 与 `install_crash_flush()`
 - **两种 formatter**：`pattern_formatter` 拼文本行；`json_formatter` 拼 JSON Lines。Sink 通过 `set_pattern` / `set_formatter` 安装（`json_*` sink 固定 JSON）
 - **占位符**：`%Y %m %d %H %M %S %e %f %l %L %v %t %P %n %s %# %! %@`；`%^` / `%$` 只标记着色区间，不输出字符
@@ -394,7 +426,7 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 
 - **MPMC 阻塞队列**（默认）：多 worker，`block` / `overrun_oldest` / `discard_new`
 - **无锁 MPSC**（可选）：`init_lockfree_thread_pool`，单 worker；只支持 `block` / `discard_new`，`overrun_oldest` 会抛异常
-- **接口透明**：`async_logger` 继承 `logger`，worker 走 `backend_sink_it_`（不再入队）；`async_file_mt` / `async_buffered_file_mt` / `async_json_file_mt` / `async_json_rotating_mt` / `async_callback_mt`
+- **接口透明**：`async_logger` 继承 `logger`，worker 走 `backend_sink_it_`（不再入队）；`async_file_mt` / `async_buffered_file_mt` / `async_json_file_mt` / `async_json_rotating_mt` / `async_callback_mt` / `async_udp_mt` / `async_tcp_mt` / `async_json_udp_mt` / `async_json_tcp_mt`
 - **关闭**：`minispdlog::shutdown()` 先 flush，再停全局线程池，再 `drop_all`
 
 ### 工程化
@@ -470,7 +502,7 @@ minispdlog/
 │   ├── logger.h / registry.h / level.h
 │   ├── json_formatter.h / pattern_formatter.h
 │   ├── details/                # 队列、线程池、消息
-│   └── sinks/                  # console / file / rotating / daily / json / callback / qt
+│   └── sinks/                  # console / file / rotating / daily / json / network / callback / qt
 ├── src/                        # 静态库实现
 ├── tests/
 │   ├── test_main.cpp           # 单测入口
@@ -482,6 +514,7 @@ minispdlog/
 │   ├── callback_log/           # 回调旁路 Demo
 │   ├── buffered_log/           # 批量写 / 找回 Demo
 │   ├── color_log/              # 终端彩色 Demo
+│   ├── network_log/            # Linux UDP/TCP Demo
 │   └── qt_log_viewer/          # Qt Demo（可选）
 ├── scripts/                    # setup_qt 等
 └── third_party/fmt/

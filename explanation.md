@@ -314,6 +314,8 @@ minispdlog::shutdown();
 | `daily_file_sink` | `daily_file_sink.h` | 按天切分 |
 | `json_file_sink` / `json_console_sink` / `json_stderr_sink` | `json_sink.h` | JSON Lines；文件 sink 继承 `buffered_file_sink`（LF） |
 | `json_rotating_file_sink` / `json_daily_file_sink` | `json_sink.h` | 滚动/按天 JSON，锁住 formatter |
+| `network_sink` / `udp_sink` / `tcp_sink` | `network_sink.h` / `network.h` | Linux 内核 UDP/TCP；`network_listener` 对端 recv/send |
+| `json_udp_sink` / `json_tcp_sink` | `network_sink.h` | JSON Lines 锁在网络 sink 上 |
 | `callback_sink` | `callback_sink.h` | 业务回调：格式化行和/或完整 `log_msg`；可选 flush 钩子。工厂 `callback_logger_mt/st`、`async_callback_mt` |
 | `qt_sink`（可选） | `qt_sink.h` | 写入 `QTextEdit` / `QPlainTextEdit` |
 | `mock_sink`（测试） | `tests/framework/mock_sink.h` | 内存捕获断言 |
@@ -328,7 +330,11 @@ minispdlog::shutdown();
 
 `json_*` sink 在构造时安装 `json_formatter`，并覆盖 `set_pattern` / `set_formatter`，避免 `logger->set_pattern` 把结构化输出改回纯文本。任意其它 sink（含 rolling/daily 文本 sink）仍可 `set_formatter(std::make_unique<json_formatter>())`；要滚动仍保持 JSON，用 `json_rotating_file_sink` / `rotating_json_logger_mt`。
 
-后续还可扩展按小时滚动、syslog、网络 Sink 等。
+### 5.2.1 Linux 网络 Sink
+
+`network_client` 走内核 BSD 套接字：`socket` → `connect` → `send`/`recv`（TCP 带 `MSG_NOSIGNAL`、可选 `TCP_NODELAY` 与超时重连）。`network_listener` 对端 `bind`/`listen`/`accept`/`recvfrom`，用于测试、本机采集或回显 ACK。UDP 一记一条数据报；TCP 按 formatter 输出的字节流发送（默认带 `\n`）。工厂：`udp_logger_mt/st`、`tcp_logger_mt/st`、`json_udp_logger_*`、`json_tcp_logger_*`、`network_logger_mt`；异步 `async_udp_mt` / `async_tcp_mt` / `async_json_udp_mt` / `async_json_tcp_mt`。非 Linux 构造抛 `std::runtime_error`。
+
+后续还可扩展按小时滚动、syslog 等。
 
 ### 5.3 颜色如何实现
 

@@ -15,6 +15,7 @@
 #include "sinks/callback_sink.h"
 #include "sinks/file_sink.h"
 #include "sinks/json_sink.h"
+#include "sinks/network_sink.h"
 
 #include <atomic>
 #include <cstdint>
@@ -226,6 +227,62 @@ inline std::shared_ptr<logger> async_json_rotating_mt(
     async_overflow_policy overflow_policy = async_overflow_policy::block,
     json_formatter fmt = {}) {
     auto sink = std::make_shared<sinks::json_rotating_file_sink_mt>(filename, max_size, max_files);
+    sink->json() = std::move(fmt);
+    std::vector<sinks::sink_ptr> sinks = {std::move(sink)};
+    auto new_logger =
+        std::make_shared<async_logger>(logger_name, std::move(sinks), overflow_policy);
+    registry::instance().register_logger(new_logger);
+    return new_logger;
+}
+
+inline std::shared_ptr<logger> async_udp_mt(
+    const std::string& logger_name,
+    const std::string& host,
+    std::uint16_t port,
+    async_overflow_policy overflow_policy = async_overflow_policy::block) {
+    auto sink = std::make_shared<sinks::udp_sink_mt>(host, port);
+    std::vector<sinks::sink_ptr> sinks = {std::move(sink)};
+    auto new_logger =
+        std::make_shared<async_logger>(logger_name, std::move(sinks), overflow_policy);
+    registry::instance().register_logger(new_logger);
+    return new_logger;
+}
+
+inline std::shared_ptr<logger> async_tcp_mt(
+    const std::string& logger_name,
+    const std::string& host,
+    std::uint16_t port,
+    async_overflow_policy overflow_policy = async_overflow_policy::block) {
+    auto sink = std::make_shared<sinks::tcp_sink_mt>(host, port);
+    std::vector<sinks::sink_ptr> sinks = {std::move(sink)};
+    auto new_logger =
+        std::make_shared<async_logger>(logger_name, std::move(sinks), overflow_policy);
+    registry::instance().register_logger(new_logger);
+    return new_logger;
+}
+
+inline std::shared_ptr<logger> async_json_udp_mt(
+    const std::string& logger_name,
+    const std::string& host,
+    std::uint16_t port,
+    async_overflow_policy overflow_policy = async_overflow_policy::block,
+    json_formatter fmt = {}) {
+    auto sink = std::make_shared<sinks::json_udp_sink_mt>(host, port);
+    sink->json() = std::move(fmt);
+    std::vector<sinks::sink_ptr> sinks = {std::move(sink)};
+    auto new_logger =
+        std::make_shared<async_logger>(logger_name, std::move(sinks), overflow_policy);
+    registry::instance().register_logger(new_logger);
+    return new_logger;
+}
+
+inline std::shared_ptr<logger> async_json_tcp_mt(
+    const std::string& logger_name,
+    const std::string& host,
+    std::uint16_t port,
+    async_overflow_policy overflow_policy = async_overflow_policy::block,
+    json_formatter fmt = {}) {
+    auto sink = std::make_shared<sinks::json_tcp_sink_mt>(host, port);
     sink->json() = std::move(fmt);
     std::vector<sinks::sink_ptr> sinks = {std::move(sink)};
     auto new_logger =

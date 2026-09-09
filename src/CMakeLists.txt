@@ -11,6 +11,7 @@ set(MINISPDLOG_SOURCES
     daily_file_sink.cpp
     json_formatter.cpp
     details/durable_file.cpp
+    network_sink.cpp
 )
 
 # 创建静态库
