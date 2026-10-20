@@ -30,6 +30,7 @@ set(UNIT_TEST_SOURCES
     unit/test_buffered_file.cpp
     unit/test_network.cpp
     unit/test_qt_sink.cpp
+    unit/test_coro.cpp
 )
 
 # ---- 统一测试入口可执行文件 ----
@@ -97,6 +98,7 @@ minispdlog_add_component_test(json          test_json.cpp          "unit;formatt
 minispdlog_add_component_test(buffered_file test_buffered_file.cpp "unit;sink;filesystem")
 minispdlog_add_component_test(network       test_network.cpp       "unit;sink;network")
 minispdlog_add_component_test(qt_sink       test_qt_sink.cpp       "unit;sink;optional")
+minispdlog_add_component_test(coro          test_coro.cpp          "unit;async;coro;concurrency")
 
 # 需要与本地 doctest 命令行完全一致时，可直接运行下列目标。
 add_custom_target(minispdlog_check

@@ -86,7 +86,28 @@ public:
 private:
     std::shared_ptr<gate_sink> sink_;
 };
-} ///< 结束匿名命名空间。
+
+/** @brief 首次写入抛异常，后续写入正常完成的故障注入 Sink。 */
+class throw_once_sink final : public sinks::base_sink<std::mutex> {
+public:
+    [[nodiscard]] std::size_t attempts() const noexcept { return attempts_.load(std::memory_order_relaxed); }
+    [[nodiscard]] std::size_t delivered() const noexcept { return delivered_.load(std::memory_order_relaxed); }
+
+protected:
+    void sink_it_(const details::log_msg&) override {
+        if (attempts_.fetch_add(1, std::memory_order_relaxed) == 0) {
+            throw std::runtime_error("async log failed");
+        }
+        delivered_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void flush_() override {}
+
+private:
+    std::atomic<std::size_t> attempts_{0};
+    std::atomic<std::size_t> delivered_{0};
+};
+} // namespace
 
 TEST_CASE("async_logger inherits from logger [async]") {
     auto mock = std::make_shared<mock_sink_mt>();
@@ -131,6 +152,28 @@ TEST_CASE("thread_pool handles multiple messages [async][thread_pool]") {
     pool.post_flush(std::shared_ptr<logger>(lg), true);
 
     REQUIRE(mock->message_count() == static_cast<std::size_t>(num_msgs));
+}
+
+TEST_CASE("thread_pool contains asynchronous sink exceptions and stays usable [async][thread_pool][error]") {
+    auto sink = std::make_shared<throw_once_sink>();
+    details::thread_pool pool(64, 2);
+    auto lg = std::make_shared<logger>("throw-once", sink);
+
+    details::log_msg first("throw-once", level::info, "first");
+    details::log_msg second("throw-once", level::info, "second");
+    pool.post_log(lg, first);
+    pool.post_log(lg, second);
+
+    CHECK_THROWS_WITH(pool.post_flush(lg, true), "async log failed");
+    CHECK(pool.error_count() == 1);
+    CHECK(sink->attempts() == 2);
+    CHECK(sink->delivered() == 1);
+
+    details::log_msg third("throw-once", level::info, "third");
+    pool.post_log(lg, third);
+    CHECK_NOTHROW(pool.post_flush(lg, true));
+    CHECK(sink->attempts() == 3);
+    CHECK(sink->delivered() == 2);
 }
 
 TEST_CASE("thread_pool multithreaded post [async][thread_pool][thread]") {
@@ -234,6 +277,40 @@ TEST_CASE("thread_pool waiting flush observes pending log completion [async][thr
     flush.get();
     REQUIRE(sink->message_count() == 1);
     REQUIRE(sink->flush_count() >= 1);
+}
+
+TEST_CASE("multi-worker flush ignores logs accepted after its barrier [async][thread_pool][flush]") {
+    auto before = std::make_shared<gate_sink>();
+    auto after = std::make_shared<gate_sink>();
+    gate_release_guard release_before(before);
+    gate_release_guard release_after(after);
+    auto control = std::make_shared<mock_sink_mt>();
+    auto before_logger = std::make_shared<logger>("barrier-before", before);
+    auto after_logger = std::make_shared<logger>("barrier-after", after);
+    auto control_logger = std::make_shared<logger>("barrier-control", control);
+    details::thread_pool pool(64, 2);
+
+    details::log_msg first("barrier-before", level::info, "before");
+    pool.post_log(before_logger, first);
+    REQUIRE(before->wait_until_entered(1, std::chrono::seconds(1)));
+
+    auto flush = std::async(std::launch::async, [&pool, control_logger] { pool.post_flush(control_logger, true); });
+    const auto flush_started_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (control->flush_count() == 0 && std::chrono::steady_clock::now() < flush_started_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(control->flush_count() >= 1);
+
+    details::log_msg second("barrier-after", level::info, "after");
+    pool.post_log(after_logger, second);
+    REQUIRE(after->wait_until_entered(1, std::chrono::seconds(1)));
+
+    before->release();
+    REQUIRE(flush.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    CHECK_NOTHROW(flush.get());
+
+    after->release();
+    pool.post_flush(after_logger, true);
 }
 
 TEST_CASE("overrun_oldest preserves flush and pending accounting [async][thread_pool][flush]") {
@@ -561,7 +638,7 @@ void require_wake_interval_delivery(async_queue_type queue_type) {
     REQUIRE(mock->last_contains("no-flush"));
 }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 TEST_CASE("blocking pool delivers a log without flush via N/T wake [async][wake]") {
     require_wake_interval_delivery(async_queue_type::blocking);
