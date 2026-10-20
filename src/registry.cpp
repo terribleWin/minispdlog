@@ -124,4 +124,4 @@ void shutdown() {
     thread_pool_manager::instance().shutdown();
     registry::instance().drop_all();
 }
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

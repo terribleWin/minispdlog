@@ -42,5 +42,5 @@ namespace sinks {
     using stderr_sink_mt = stderr_sink<std::mutex>;
     using stderr_sink_st = stderr_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // sinks
+} // minispdlog

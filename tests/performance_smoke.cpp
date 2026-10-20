@@ -105,7 +105,7 @@ std::size_t measure_async_multi(minispdlog::async_queue_type queue_type, std::st
     return sink->bytes_written();
 }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 int main() {
     std::cout << "minispdlog performance smoke (" << kMessages << " messages)\n";

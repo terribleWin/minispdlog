@@ -31,7 +31,7 @@ private:
     std::atomic<bool>& completed_;
 };
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 TEST_CASE("registry singleton instance is consistent [registry]") {
     auto& reg1 = registry::instance();

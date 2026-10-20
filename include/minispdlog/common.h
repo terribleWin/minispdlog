@@ -51,4 +51,4 @@ using string_view_t = std::string_view;
 /** @brief 日志时间戳使用的系统时钟。 */
 using log_clock = std::chrono::system_clock;
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

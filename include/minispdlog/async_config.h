@@ -32,4 +32,4 @@ struct thread_pool_options {
     std::uint32_t wake_interval_us = 100;
 };
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

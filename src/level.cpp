@@ -42,4 +42,4 @@ level string_to_level(const std::string& str) {
     return level::info;
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

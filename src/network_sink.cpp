@@ -258,7 +258,7 @@ namespace {
 
 #endif
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 struct network_client::impl {
     network_config cfg{};
@@ -705,4 +705,4 @@ std::optional<std::string> network_listener::try_recv(int timeout_ms) {
 #endif
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

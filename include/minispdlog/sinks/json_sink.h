@@ -126,5 +126,5 @@ namespace sinks {
     using json_daily_file_sink_mt = json_daily_file_sink<std::mutex>;
     using json_daily_file_sink_st = json_daily_file_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // sinks
+} // minispdlog

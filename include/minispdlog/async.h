@@ -408,4 +408,4 @@ inline std::shared_ptr<logger> async_callback_mt(const std::string& logger_name,
     return new_logger;
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

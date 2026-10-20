@@ -37,5 +37,5 @@ namespace details {
     /** @brief 原地移除字符串两侧空白并返回同一对象。 */
     MINISPDLOG_API std::string& trim(std::string& s);
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog

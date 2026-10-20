@@ -88,5 +88,5 @@ namespace details {
         alignas(kCacheLineSize) std::atomic<std::size_t> read_idx_;
     };
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog

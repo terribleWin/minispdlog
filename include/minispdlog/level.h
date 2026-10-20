@@ -36,4 +36,4 @@ inline bool should_log(level logger_level, level msg_level) noexcept {
     return msg_level >= logger_level;
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

@@ -113,7 +113,7 @@ namespace details {
         return buf;
     }
 
-} ///< 结束 details 命名空间。
+} // details
 
 /**
  * @brief 同步日志器基类。
@@ -276,4 +276,4 @@ private:
     /// 自动刷新级别。
     std::atomic<level> flush_level_{level::off};
 };
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

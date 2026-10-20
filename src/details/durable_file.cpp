@@ -179,7 +179,7 @@ namespace details {
             return payload.substr(0, pos + 1);
         }
 
-    } ///< 结束匿名命名空间。
+    } // namespace
 
     std::string wal_path_for(const std::string& log_path) {
         return log_path + ".minispdlog-wal";
@@ -525,7 +525,7 @@ namespace details {
         has_first_ = false;
     }
 
-} ///< 结束 details 命名空间。
+} // details
 
 void dump_buffered_logs() noexcept {
     details::dump_durable_files();
@@ -568,7 +568,7 @@ namespace {
     }
 #endif
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 void install_crash_flush() {
     bool expected = false;
@@ -594,4 +594,4 @@ void install_crash_flush() {
 #endif
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

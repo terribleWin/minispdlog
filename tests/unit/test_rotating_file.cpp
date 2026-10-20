@@ -57,7 +57,7 @@ void write_file(const std::string& path, const std::string& content) {
     out.write(content.data(), static_cast<std::streamsize>(content.size()));
 }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 TEST_CASE("rotating calc_filename inserts index before extension [sink][rotating]") {
     REQUIRE(sinks::rotating_file_sink_mt::calc_filename("logs/mylog.txt", 0) == "logs/mylog.txt");

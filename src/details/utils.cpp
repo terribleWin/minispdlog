@@ -92,5 +92,5 @@ namespace details {
         return ltrim(rtrim(s));
     }
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog

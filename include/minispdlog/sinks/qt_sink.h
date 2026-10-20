@@ -82,7 +82,7 @@ namespace sinks {
     using qt_sink_mt = qt_sink<std::mutex>;
     using qt_sink_st = qt_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
+} // sinks
 
 /**
  * @brief 创建多线程安全的 Qt logger 并注册到全局注册表。
@@ -103,4 +103,4 @@ inline std::shared_ptr<logger> qt_logger_st(const std::string& logger_name, QObj
     return lg;
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

@@ -45,7 +45,7 @@ log_clock::time_point next_calendar_day(int days_ahead) {
     return log_clock::now() + std::chrono::hours(24 * days_ahead + 12);
 }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 TEST_CASE("daily calc_filename inserts YYYY-MM-DD before extension [sink][daily]") {
     REQUIRE(sinks::daily_file_sink_mt::calc_filename("logs/app.log", 2026, 9, 5) == "logs/app.2026-09-05.log");

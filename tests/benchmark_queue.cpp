@@ -69,7 +69,7 @@ void drain_some(Q& q, int n) {
     }
 }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 /// ==================== 1. 单线程 push ====================
 template <typename Q>

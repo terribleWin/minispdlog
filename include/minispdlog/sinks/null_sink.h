@@ -36,5 +36,5 @@ namespace sinks {
     using null_sink_mt = null_sink<std::mutex>;
     using null_sink_st = null_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // sinks
+} // minispdlog
