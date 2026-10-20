@@ -17,6 +17,9 @@ registry& registry::instance() {
 }
 
 void registry::register_logger(std::shared_ptr<logger> new_logger) {
+    if (!new_logger) {
+        throw std::invalid_argument("registry: logger must not be null");
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     throw_if_exists(new_logger->name());
     loggers_[new_logger->name()] = std::move(new_logger);
@@ -32,20 +35,34 @@ std::shared_ptr<logger> registry::get(const std::string& logger_name) {
 }
 
 void registry::drop(const std::string& logger_name) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto current_default = default_logger_.load(std::memory_order_acquire);
-    const bool is_default_logger = current_default && current_default->name() == logger_name;
-    loggers_.erase(logger_name);
-    if (is_default_logger) {
-        default_logger_.compare_exchange_strong(current_default, std::shared_ptr<logger>{}, std::memory_order_acq_rel,
-                                                std::memory_order_acquire);
+    std::shared_ptr<logger> retired_logger;
+    std::shared_ptr<logger> current_default;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        current_default = default_logger_.load(std::memory_order_acquire);
+        const bool is_default_logger = current_default && current_default->name() == logger_name;
+        const auto it = loggers_.find(logger_name);
+        if (it != loggers_.end()) {
+            retired_logger = std::move(it->second);
+            loggers_.erase(it);
+        }
+        if (is_default_logger) {
+            default_logger_.compare_exchange_strong(current_default, std::shared_ptr<logger>{},
+                                                    std::memory_order_acq_rel, std::memory_order_acquire);
+        }
     }
+    /// Logger 析构可能刷新异步队列或执行用户回调，必须发生在注册表锁外。
 }
 
 void registry::drop_all() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    loggers_.clear();
-    default_logger_.store({}, std::memory_order_release);
+    decltype(loggers_) retired_loggers;
+    std::shared_ptr<logger> retired_default;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        retired_loggers.swap(loggers_);
+        retired_default = default_logger_.exchange({}, std::memory_order_acq_rel);
+    }
+    /// 容器及默认 Logger 在锁外释放，允许析构路径安全重入注册表。
 }
 
 std::shared_ptr<logger> registry::default_logger() {

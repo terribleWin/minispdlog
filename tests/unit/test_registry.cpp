@@ -13,6 +13,26 @@ using minispdlog::tests::mock_sink_mt;
 
 /** @file test_registry.cpp @brief 覆盖全局 logger 注册表与默认 logger 快照。 */
 
+namespace {
+
+class reentrant_destructor_logger final : public logger {
+public:
+    reentrant_destructor_logger(std::string name, std::atomic<bool>& entered, std::atomic<bool>& completed)
+        : logger(std::move(name)), entered_(entered), completed_(completed) {}
+
+    ~reentrant_destructor_logger() override {
+        entered_.store(true, std::memory_order_release);
+        static_cast<void>(registry::instance().get("registry-reentrant-probe"));
+        completed_.store(true, std::memory_order_release);
+    }
+
+private:
+    std::atomic<bool>& entered_;
+    std::atomic<bool>& completed_;
+};
+
+} ///< 结束匿名命名空间。
+
 TEST_CASE("registry singleton instance is consistent [registry]") {
     auto& reg1 = registry::instance();
     auto& reg2 = registry::instance();
@@ -30,6 +50,38 @@ TEST_CASE("register and get logger [registry]") {
     REQUIRE(retrieved->name() == "test_reg");
 
     drop("test_reg"); ///< 清理
+}
+
+TEST_CASE("register rejects null logger [registry][safety]") {
+    REQUIRE_THROWS_AS(registry::instance().register_logger(nullptr), std::invalid_argument);
+}
+
+TEST_CASE("drop releases logger outside registry lock [registry][reentrant]") {
+    drop_all();
+    std::atomic<bool> entered{false};
+    std::atomic<bool> completed{false};
+    auto victim = std::make_shared<reentrant_destructor_logger>("registry-reentrant-drop", entered, completed);
+    register_logger(victim);
+    victim.reset();
+
+    drop("registry-reentrant-drop");
+
+    REQUIRE(entered.load(std::memory_order_acquire));
+    REQUIRE(completed.load(std::memory_order_acquire));
+}
+
+TEST_CASE("drop_all releases loggers outside registry lock [registry][reentrant]") {
+    drop_all();
+    std::atomic<bool> entered{false};
+    std::atomic<bool> completed{false};
+    auto victim = std::make_shared<reentrant_destructor_logger>("registry-reentrant-all", entered, completed);
+    register_logger(victim);
+    victim.reset();
+
+    drop_all();
+
+    REQUIRE(entered.load(std::memory_order_acquire));
+    REQUIRE(completed.load(std::memory_order_acquire));
 }
 
 TEST_CASE("get non-existent logger returns nullptr [registry]") {

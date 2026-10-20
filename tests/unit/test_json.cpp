@@ -262,6 +262,18 @@ TEST_CASE("json_formatter passes through utf-8 [formatter][json]") {
     REQUIRE(line.find("\"msg\":\"你好\"") != std::string::npos);
 }
 
+TEST_CASE("json_formatter replaces malformed utf-8 [formatter][json]") {
+    std::string payload{"before"};
+    payload.push_back(static_cast<char>(0x80));
+    payload.push_back(static_cast<char>(0xC0));
+    payload += "after";
+    details::log_msg msg("lg", level::info, payload);
+    const auto line = format_json(msg);
+    const std::string replacement{"\xEF\xBF\xBD"};
+    REQUIRE(line.find("\"msg\":\"before" + replacement + replacement + "after\"") != std::string::npos);
+    REQUIRE(line.find(static_cast<char>(0x80)) == std::string::npos);
+}
+
 TEST_CASE("json_formatter escapes logger name [formatter][json]") {
     details::log_msg msg("a\"b\\c", level::info, "x");
     const auto line = format_json(msg);

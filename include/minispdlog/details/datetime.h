@@ -87,7 +87,7 @@ namespace details {
 
     inline int subsec_count(const log_clock::time_point& tp, std::int64_t units_per_second) {
         const auto duration = tp.time_since_epoch();
-        const auto secs = std::chrono::duration_cast<std::chrono::seconds>(duration);
+        const auto secs = std::chrono::floor<std::chrono::seconds>(duration);
         const auto rest = duration - secs;
         if (units_per_second == 1000) {
             return static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(rest).count());
@@ -116,11 +116,12 @@ namespace details {
         char ymd_hms[20]{};
 
         void refresh(const log_clock::time_point& tp) {
-            const auto next = std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch());
+            const auto next = std::chrono::floor<std::chrono::seconds>(tp.time_since_epoch());
             if (next == secs && ymd_hms[0] != '\0') {
                 return;
             }
-            const auto time_t_val = log_clock::to_time_t(tp);
+            const auto whole_second = log_clock::time_point{std::chrono::duration_cast<log_clock::duration>(next)};
+            const auto time_t_val = log_clock::to_time_t(whole_second);
 #ifdef _WIN32
             localtime_s(&tm, &time_t_val);
 #else
@@ -151,11 +152,12 @@ namespace details {
         char ymd_hms[20]{};
 
         void refresh(const log_clock::time_point& tp) {
-            const auto next = std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch());
+            const auto next = std::chrono::floor<std::chrono::seconds>(tp.time_since_epoch());
             if (next == secs && ymd_hms[0] != '\0') {
                 return;
             }
-            const auto time_t_val = log_clock::to_time_t(tp);
+            const auto whole_second = log_clock::time_point{std::chrono::duration_cast<log_clock::duration>(next)};
+            const auto time_t_val = log_clock::to_time_t(whole_second);
             std::tm tm{};
 #ifdef _WIN32
             gmtime_s(&tm, &time_t_val);
