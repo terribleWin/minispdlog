@@ -10,7 +10,7 @@
 - 文本、JSON 与不同输出目标通过 formatter / Sink 组合，而不是复制 logger 体系；
 - 公开 API 采用 C++20，内部实现保持独立可读。
 
-非目标包括：与 spdlog 的 ABI/API 完全兼容、隐藏所有平台差异、实现通用遥测 SDK、承诺任意硬件上的固定性能。
+非目标包括：复制第三方库的 ABI/API、隐藏所有平台差异、实现通用遥测 SDK、承诺任意硬件上的固定性能。
 
 ## ADR-001：保留同步与异步两条路径
 
@@ -72,6 +72,18 @@ logger 仍可不注册而由业务直接持有。名称唯一性在注册时验�
 
 性能修改必须先保持测试语义，再用可复现实验说明瓶颈变化。方法见[性能验证](performance.md)。
 
+## ADR-011：协程只承载低频控制操作
+
+`coro::flush(logger)`、`coro::flush_all()` 与 `coro::shutdown()` 把既有阻塞生命周期操作投递到共享单线程 FIFO 控制执行器。逐条 `log()` 不创建协程帧，也不改变同步直写或异步入队的数据路径。
+
+标准 C++20 没有统一执行器，因此 Awaitable 默认在控制线程恢复；调用方可传入 `resume_scheduler` 回到自己的事件循环。操作一旦提交便执行到完成，异常在恢复点重新抛出。该设计解决的是事件循环线程不应被刷新和关闭阻塞的问题，不把普通文件或 Socket I/O 宣称为内核异步 I/O。
+
+## ADR-012：文本格式显式区分原始正文与单行正文
+
+`%v` 保留 payload 原始字节，适合确实需要多行文本的场景；`%q` 转义反斜杠、C0 控制字符和 Unicode 行/段落分隔符，适合按行采集。`%u` 提供固定 UTC RFC 3339 毫秒时间，`%E` 提供带符号 Unix epoch 毫秒。
+
+这些标志让文本日志在可读性、行边界和时间排序之间做显式选择。结构化数据仍应使用 `json_formatter`，不要用 pattern 手工拼接 JSON。
+
 ## 扩展检查表
 
 新增 formatter 或 Sink 前回答：
@@ -84,4 +96,4 @@ logger 仍可不注册而由业务直接持有。名称唯一性在注册时验�
 6. 哪些平台真正实现，哪些配置需要显式失败？
 7. 单元测试、故障测试和基准分别验证什么？
 
-与外部项目的边界见[与 spdlog 的设计边界](design-vs-spdlog.md)，对象关系见 [`architecture.puml`](architecture.puml)。
+能力范围与接入契约见[项目边界](project-boundaries.md)，对象关系见 [`architecture.puml`](architecture.puml)。
