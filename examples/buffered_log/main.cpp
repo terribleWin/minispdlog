@@ -51,8 +51,7 @@ int main() {
             std::ofstream torn(salvaged, std::ios::binary | std::ios::trunc);
             torn << "line-ok\npartial-without-newline";
         }
-        auto salvaged_log =
-            minispdlog::buffered_logger_mt("salvaged", salvaged.string(), false, cfg);
+        auto salvaged_log = minispdlog::buffered_logger_mt("salvaged", salvaged.string(), false, cfg);
         salvaged_log->set_pattern("%v");
         salvaged_log->info("after-salvage");
         salvaged_log->flush();

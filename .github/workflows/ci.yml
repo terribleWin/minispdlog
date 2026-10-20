@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq clang-tidy-15 python3-pip
-          # Pin to the same clang-format the Windows/dev tree uses (pip 23.1.0).
+          # 固定为 Windows 开发环境使用的同一 clang-format 版本（pip 23.1.0）。
           python3 -m pip install --user 'clang-format==23.1.0'
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
@@ -50,8 +50,8 @@ jobs:
         compiler: [g++, clang++-15]
         build_type: [Release, RelASan, RelTSan]
         exclude:
-          # GCC 11 TSan cannot see libstdc++'s shared_ptr atomic mutex, so it
-          # false-positives on logger/registry COW loads. Clang TSan covers this.
+          # GCC 11 TSan 无法识别 libstdc++ 共享指针原子操作内部的互斥量，
+          # 会误报 logger/registry 的写时复制读取；该场景由 Clang TSan 覆盖。
           - compiler: g++
             build_type: RelTSan
 

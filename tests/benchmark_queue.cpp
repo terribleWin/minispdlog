@@ -1,13 +1,13 @@
-// 队列微基准：SPSC / MPSC / mutex_queue 相对对比
-//
-// 为何以前跑很久：
-//   Google Benchmark 默认每个 case 至少跑 ~0.5s，且 ProdCons 曾用 10 万消息、
-//   多组 Args，总时长可达数十分钟；多生产者 + 实验性 mpsc 还可能自旋挂死。
-//
-// 当前策略：
-//   - 缩小消息量；重负载 MinTime=0.05s + 显式 Iterations 硬封顶
-//   - 去掉 SPSC 多生产者（协议不允许）
-//   - 去掉 MPSC 多生产者（实现仍为实验性，忙等可能永不结束）
+/// 队列微基准：SPSC / MPSC / mutex_queue 相对对比
+///
+/// 为何以前跑很久：
+///   Google Benchmark 默认每个 case 至少跑 ~0.5s，且 ProdCons 曾用 10 万消息、
+///   多组 Args，总时长可达数十分钟；多生产者 + 实验性 mpsc 还可能自旋挂死。
+///
+/// 当前策略：
+///   - 缩小消息量；重负载 MinTime=0.05s + 显式 Iterations 硬封顶
+///   - 去掉 SPSC 多生产者（协议不允许）
+///   - 去掉 MPSC 多生产者（实现仍为实验性，忙等可能永不结束）
 #include "minispdlog/details/mpsc_queue.h"
 #include "minispdlog/details/spsc_queue.h"
 #include <atomic>
@@ -23,7 +23,7 @@ namespace {
 
 constexpr double kLightMinTime = 0.1;
 constexpr double kHeavyMinTime = 0.05;
-// 含线程创建的 case：最多跑这么多轮，避免统计收敛拖太久
+/// 含线程创建的 case：最多跑这么多轮，避免统计收敛拖太久
 constexpr int kHeavyMaxIterations = 20;
 
 template <typename T>
@@ -69,9 +69,9 @@ void drain_some(Q& q, int n) {
     }
 }
 
-} // namespace
+} ///< 结束匿名命名空间。
 
-// ==================== 1. 单线程 push ====================
+/// ==================== 1. 单线程 push ====================
 template <typename Q>
 void bench_push(benchmark::State& state) {
     Q q(1 << 16);
@@ -100,7 +100,7 @@ BENCHMARK(BM_SPSC_Push)->Unit(benchmark::kNanosecond)->MinTime(kLightMinTime);
 BENCHMARK(BM_MPSC_Push)->Unit(benchmark::kNanosecond)->MinTime(kLightMinTime);
 BENCHMARK(BM_Mutex_Push)->Unit(benchmark::kNanosecond)->MinTime(kLightMinTime);
 
-// ==================== 2. 单线程 pop（按批 4096，避免「清空 10 万」假大数） ====================
+/// ==================== 2. 单线程 pop（按批 4096，避免「清空 10 万」假大数） ====================
 template <typename Q>
 void bench_pop(benchmark::State& state) {
     constexpr int kBatch = 4096;
@@ -134,7 +134,7 @@ BENCHMARK(BM_SPSC_Pop)->Unit(benchmark::kNanosecond)->MinTime(kHeavyMinTime);
 BENCHMARK(BM_MPSC_Pop)->Unit(benchmark::kNanosecond)->MinTime(kHeavyMinTime);
 BENCHMARK(BM_Mutex_Pop)->Unit(benchmark::kNanosecond)->MinTime(kHeavyMinTime);
 
-// ==================== 3. 队列已满 push ====================
+/// ==================== 3. 队列已满 push ====================
 template <typename Q>
 void bench_push_full(benchmark::State& state) {
     constexpr int kCap = 64;
@@ -167,7 +167,7 @@ static void BM_Mutex_PushFull(benchmark::State& state) {
 BENCHMARK(BM_SPSC_PushFull)->Unit(benchmark::kNanosecond)->MinTime(kHeavyMinTime);
 BENCHMARK(BM_Mutex_PushFull)->Unit(benchmark::kNanosecond)->MinTime(kHeavyMinTime);
 
-// ==================== 4. 1 生产 + 1 消费 ====================
+/// ==================== 4. 1 生产 + 1 消费 ====================
 template <typename Q>
 void bench_prodcons(benchmark::State& state) {
     const int total_msgs = static_cast<int>(state.range(0));
@@ -227,7 +227,7 @@ BENCHMARK(BM_Mutex_ProdCons)
     ->Iterations(kHeavyMaxIterations)
     ->UseRealTime();
 
-// ==================== 5. 队列容量影响（1P1C） ====================
+/// ==================== 5. 队列容量影响（1P1C） ====================
 template <typename Q>
 void bench_queue_size_impact(benchmark::State& state) {
     constexpr int kMsgs = 3000;

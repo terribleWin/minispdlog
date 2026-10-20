@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Use the repo-root .clang-format / .clang-tidy.
-#   ./scripts/lint.sh format   # clang-format --dry-run --Werror (allowlisted files)
+# 使用仓库根目录的 .clang-format 与 .clang-tidy。
+#   ./scripts/lint.sh format   # clang-format --dry-run --Werror（项目自有源码）
 #   ./scripts/lint.sh tidy     # clang-tidy --config-file=.clang-tidy -p build
 #   ./scripts/lint.sh all
 set -euo pipefail
@@ -8,11 +8,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
-# Files kept clang-format clean against .clang-format (clang-format 23.1.0).
-FORMAT_FILES=(
-    include/minispdlog/sinks/daily_file_sink.h
-    src/daily_file_sink.cpp
-    tests/unit/test_daily_file.cpp
+# 仅检查项目自有源码，不改动 third_party 中的外部代码。
+mapfile -t FORMAT_FILES < <(
+    git ls-files \
+        'include/minispdlog/*.h' 'include/minispdlog/**/*.h' \
+        'include/minispdlog/*.hpp' 'include/minispdlog/**/*.hpp' \
+        'src/*.cpp' 'src/**/*.cpp' 'src/*.hpp' 'src/**/*.hpp' \
+        'tests/*.h' 'tests/**/*.h' 'tests/*.hpp' 'tests/**/*.hpp' \
+        'tests/*.cpp' 'tests/**/*.cpp' 'examples/*.cpp' 'examples/**/*.cpp' \
+        ':(exclude)tests/framework/doctest.h'
 )
 
 collect_sources() {
@@ -22,7 +26,7 @@ collect_sources() {
 cmd="${1:-all}"
 
 if [[ "${cmd}" == "format" || "${cmd}" == "all" ]]; then
-    # --style=file loads the nearest .clang-format (repo root).
+    # --style=file 会读取最近的 .clang-format，即仓库根目录配置。
     clang-format --style=file --dry-run --Werror "${FORMAT_FILES[@]}"
 fi
 

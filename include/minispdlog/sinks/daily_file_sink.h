@@ -11,18 +11,21 @@
 namespace minispdlog {
 namespace sinks {
 
-    // daily_file_sink: rotate once per local calendar day (not hourly).
-    //
-    // Filename convention (same-scene '-' as %Y-%m-%d):
-    //   logs/app.log  + 2026-09-05  ->  logs/app.2026-09-05.log
-    //
-    // Rotation uses log_msg::time so tests can inject a date. The optional
-    // hour:minute is the daily cut-over (default 00:00).
-    // max_files == 0 keeps every dated file; otherwise files older than
-    // (current date - max_files days) are removed.
+    /**
+ * @brief 按本地日历日期切分文件的 Sink。
+ * @tparam Mutex `std::mutex` 为多线程版本，`null_mutex` 为单线程版本。
+ *
+ * 文件名示例：`logs/app.log` 在 2026-09-05 写入 `logs/app.2026-09-05.log`。
+ * 每日切分点由小时和分钟指定，默认本地时间 00:00。切分判断使用
+ * `log_msg::time`，便于测试注入确定时间。`max_files == 0` 表示不清理历史文件。
+ */
     template <typename Mutex>
     class daily_file_sink : public base_sink<Mutex> {
     public:
+        /**
+     * @brief 创建按天文件 Sink。
+     * @throws std::invalid_argument 小时不在 0..23 或分钟不在 0..59 时抛出。
+     */
         daily_file_sink(std::string base_filename, int rotation_hour = 0, int rotation_minute = 0,
                         bool truncate = false, std::size_t max_files = 0);
 
@@ -31,10 +34,12 @@ namespace sinks {
         daily_file_sink(const daily_file_sink&) = delete;
         daily_file_sink& operator=(const daily_file_sink&) = delete;
 
+        /** @brief 返回当前日期对应的实际文件名。 */
         [[nodiscard]] std::string filename() const;
 
-        // logs/app.log + {2026,9,5} -> logs/app.2026-09-05.log
+        /** @brief 按 `tm` 日期计算带 `YYYY-MM-DD` 后缀的文件名。 */
         static std::string calc_filename(const std::string& base_filename, const std::tm& date);
+        /** @brief 按年月日计算带日期后缀的文件名。 */
         static std::string calc_filename(const std::string& base_filename, int year, int month, int day);
 
     protected:
@@ -67,5 +72,5 @@ namespace sinks {
     using daily_file_sink_mt = daily_file_sink<std::mutex>;
     using daily_file_sink_st = daily_file_sink<null_mutex>;
 
-} // namespace sinks
-} // namespace minispdlog
+} ///< 结束 sinks 命名空间。
+} ///< 结束 minispdlog 命名空间。

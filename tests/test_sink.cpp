@@ -9,7 +9,7 @@ using namespace minispdlog;
 void test_log_msg_creation() {
     std::cout << "\n========== 测试1:log_msg 创建 ==========\n";
 
-    // 创建日志消息
+    /// 创建日志消息
     details::log_msg msg1("TestLogger", level::info, "Hello, MiniSpdlog!");
 
     std::cout << "Logger 名称: " << msg1.logger_name << "\n";
@@ -33,13 +33,13 @@ void test_source_loc() {
 void test_console_sink_mt() {
     std::cout << "\n========== 测试3:多线程控制台 Sink ==========\n";
 
-    // 创建多线程安全的控制台 Sink
+    /// 创建多线程安全的控制台 Sink
     auto sink = std::make_shared<sinks::console_sink_mt>();
 
-    // 设置日志级别
+    /// 设置日志级别
     sink->set_level(level::trace);
 
-    // 测试不同级别的日志
+    /// 测试不同级别的日志
     std::vector<level> levels = {level::trace, level::debug, level::info, level::warn, level::error, level::critical};
 
     for (auto lvl : levels) {
@@ -59,7 +59,7 @@ void test_level_filtering() {
 
     auto sink = std::make_shared<sinks::console_sink_mt>();
 
-    // 设置级别为 warn(只输出 warn 及以上)
+    /// 设置级别为 warn(只输出 warn 及以上)
     sink->set_level(level::warn);
     std::cout << "Sink 级别设置为: " << level_to_string(sink->get_level()) << "\n\n";
 

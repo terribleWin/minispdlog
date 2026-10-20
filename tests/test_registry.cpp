@@ -9,12 +9,12 @@ using namespace minispdlog;
 void test_basic_registry() {
     std::cout << "\n========== 测试1:基础注册和获取 ==========\n";
 
-    // 创建并注册 logger
+    /// 创建并注册日志器。
     auto console_sink = std::make_shared<sinks::console_sink_mt>();
     auto my_logger = std::make_shared<logger>("my_logger", console_sink);
     register_logger(my_logger);
 
-    // 获取 logger
+    /// 获取 logger
     auto retrieved = get("my_logger");
     if (retrieved) {
         std::cout << " 成功获取 logger: " << retrieved->name() << "\n";
@@ -23,7 +23,7 @@ void test_basic_registry() {
         std::cout << " 未找到 logger\n";
     }
 
-    // 尝试获取不存在的 logger
+    /// 尝试获取不存在的 logger
     auto not_exist = get("non_existent");
     if (!not_exist) {
         std::cout << " 不存在的 logger 返回 nullptr\n";
@@ -42,7 +42,7 @@ void test_duplicate_registration() {
         register_logger(logger1);
         std::cout << " 第一次注册成功\n";
 
-        // 尝试重复注册
+        /// 尝试重复注册
         auto logger2 = std::make_shared<logger>("duplicate_test", sink);
         register_logger(logger2);
         std::cout << " 重复注册没有抛出异常(错误!)\n";
@@ -56,14 +56,14 @@ void test_duplicate_registration() {
 void test_default_logger() {
     std::cout << "\n========== 测试3:默认 Logger ==========\n";
 
-    // 使用默认 logger
+    /// 使用默认 logger
     auto def_log = default_logger();
     std::cout << "默认 logger 名称: [" << def_log->name() << "]\n";
 
     def_log->info("This is from default logger");
     def_log->warn("Warning from default logger");
 
-    // 替换默认 logger
+    /// 替换默认 logger
     auto new_default = stdout_color_mt("new_default");
     set_default_logger(new_default);
 
@@ -77,7 +77,7 @@ void test_default_logger() {
 void test_global_logging() {
     std::cout << "\n========== 测试4:全局日志接口 ==========\n";
 
-    // 直接使用全局函数(操作默认 logger)
+    /// 直接使用全局函数(操作默认 logger)
     info("Global info message");
     warn("Global warning");
     error("Global error");
@@ -100,7 +100,7 @@ void test_global_logging() {
 void test_factory_functions() {
     std::cout << "\n========== 测试5:工厂函数 ==========\n";
 
-    // 使用工厂函数创建各种 logger
+    /// 使用工厂函数创建各种 logger
     auto console_log = stdout_color_mt("console_logger");
     auto stderr_log = stderr_color_mt("stderr_logger");
     auto file_log = basic_logger_mt("file_logger", "logs/factory_test.log", true);
@@ -109,7 +109,7 @@ void test_factory_functions() {
     stderr_log->error("Error from stderr logger");
     file_log->info("Message from file logger");
 
-    // 从 registry 获取
+    /// 从 registry 获取
     auto retrieved_console = get("console_logger");
     if (retrieved_console) {
         retrieved_console->debug("Retrieved from registry");
@@ -125,12 +125,12 @@ void test_factory_functions() {
 void test_multiple_loggers() {
     std::cout << "\n========== 测试6:多 Logger 场景 ==========\n";
 
-    // 创建多个不同用途的 logger
+    /// 创建多个不同用途的 logger
     auto app_logger = stdout_color_mt("app");
     auto db_logger = basic_logger_mt("database", "logs/database.log", true);
     auto net_logger = stdout_color_mt("network");
 
-    // 不同组件使用不同 logger
+    /// 不同组件使用不同 logger
     get("app")->info("Application started");
     get("database")->info("Connecting to database...");
     get("database")->info("Connection established");
@@ -216,28 +216,28 @@ void test_thread_safety() {
 void test_real_world_scenario() {
     std::cout << "\n========== 测试10:真实场景模拟 ==========\n";
 
-    // 模拟应用程序的日志配置
+    /// 模拟应用程序的日志配置
 
-    // 1. 主应用日志:彩色控制台
+    /// 1. 主应用日志:彩色控制台
     auto app = stdout_color_mt("app");
     app->set_level(level::debug);
 
-    // 2. 数据库日志:文件
+    /// 2. 数据库日志:文件
     auto db = basic_logger_mt("database", "logs/db.log", false);
     db->set_level(level::trace);
 
-    // 3. 网络日志:文件
+    /// 3. 网络日志:文件
     auto net = basic_logger_mt("network", "logs/network.log", false);
     net->set_level(level::info);
 
-    // 4. 错误日志:单独的文件
+    /// 4. 错误日志:单独的文件
     auto err = basic_logger_mt("errors", "logs/errors.log", false);
     err->set_level(level::error);
 
-    // 5. 设置默认 logger 为 app
+    /// 5. 设置默认 logger 为 app
     set_default_logger(app);
 
-    // 模拟应用运行
+    /// 模拟应用运行
     std::cout << "\n--- 应用启动 ---\n";
     info("Application starting...");
 
@@ -266,7 +266,7 @@ void test_real_world_scenario() {
     std::cout << "  - logs/network.log (info 及以上)\n";
     std::cout << "  - logs/errors.log (仅 error)\n";
 
-    // 清理
+    /// 清理
     drop_all();
 }
 
@@ -277,19 +277,19 @@ void test_logger_lifetime() {
         auto temp_logger = stdout_color_mt("temp_scoped");
         temp_logger->info("Logger created in scope");
 
-        // 在作用域内,logger 被 registry 持有
+        /// 在作用域内,logger 被 registry 持有
         auto retrieved = get("temp_scoped");
         std::cout << " Logger 在 registry 中: " << (retrieved ? "是" : "否") << "\n";
     }
 
-    // 出作用域后,原始 shared_ptr 销毁,但 registry 仍持有
+    /// 出作用域后,原始 shared_ptr 销毁,但 registry 仍持有
     auto still_exists = get("temp_scoped");
     if (still_exists) {
         std::cout << " Registry 保持 logger 存活\n";
         still_exists->info("Still alive in registry");
     }
 
-    // 从 registry 中移除
+    /// 从 registry 中移除
     drop("temp_scoped");
 
     auto after_drop = get("temp_scoped");
@@ -301,14 +301,14 @@ void test_logger_lifetime() {
 void test_custom_default_pattern() {
     std::cout << "\n========== 测试12:自定义默认 Logger 格式 ==========\n";
 
-    // 创建自定义格式的默认 logger
+    /// 创建自定义格式的默认 logger
     auto custom_sink = std::make_shared<sinks::color_console_sink_mt>();
     custom_sink->set_formatter(std::make_unique<pattern_formatter>("【%Y-%m-%d %H:%M:%S】【%L】%v"));
 
     auto custom_default = std::make_shared<logger>("custom_default", custom_sink);
     set_default_logger(custom_default);
 
-    // 使用全局接口
+    /// 使用全局接口
     info("自定义格式的日志");
     warn("警告消息");
     error("错误消息");
@@ -340,14 +340,14 @@ void test_set_level_flush_after_drop_all() {
     auto survivor = stdout_color_mt("survivor");
     survivor->info("before drop_all");
 
-    // 直接清空 registry 内部状态（绕过 default_logger() 的自动重建）
+    /// 直接清空 registry 内部状态（绕过 default_logger() 的自动重建）
     registry::instance().drop_all();
 
     if (registry::instance().default_logger()) {
         throw std::runtime_error("expected default_logger to be null after drop_all");
     }
 
-    // 方案 A：default 为空时跳过，不应解引用空指针
+    /// 方案 A：default 为空时跳过，不应解引用空指针
     registry::instance().set_level(level::warn);
     registry::instance().flush_all();
 
@@ -359,7 +359,7 @@ int main() {
     std::cout << "║ MiniSpdlog 第5天测试 - Registry系统     ║\n";
     std::cout << "╚════════════════════════════════════════╝\n";
 
-    // 创建日志目录
+    /// 创建日志目录
     system("mkdir -p logs");
 
     try {

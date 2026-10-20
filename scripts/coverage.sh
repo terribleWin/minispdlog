@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate lcov HTML from a CMake build tree.
+# 从 CMake 构建目录生成 lcov HTML 覆盖率报告。
 #   scripts/coverage.sh BUILD_DIR LCOV GENHTML CTEST
 set -euo pipefail
 
@@ -13,7 +13,7 @@ cd "${BUILD_DIR}"
 "${CTEST}" --output-on-failure --no-tests=error
 
 ignore=(--ignore-errors source --ignore-errors graph --ignore-errors gcov)
-# lcov 2.x treats mismatch/negative/empty as fatal; 1.14 on Ubuntu 22.04 does not.
+# lcov 2.x 会把 mismatch、negative、empty 当作致命错误，而 Ubuntu 22.04 的 1.14 不会。
 if "${LCOV}" --version 2>/dev/null | grep -Eq 'version 2'; then
     ignore+=(--ignore-errors negative --ignore-errors mismatch --ignore-errors unused --ignore-errors empty)
 fi

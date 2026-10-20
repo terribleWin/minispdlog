@@ -1,31 +1,43 @@
 # minispdlog
 
-> 从零构建的轻量级 C++ 异步日志库，核心设计参考 [spdlog](https://github.com/gabime/spdlog)。
+```text
+ __  __ _       _ ____            _ _
+|  \/  (_)_ __ (_) ___| _ __   __| | | ___   __ _
+| |\/| | | '_ \| \___ \| '_ \ / _` | |/ _ \ / _` |
+| |  | | | | | | |___) | |_) | (_| | | (_) | (_| |
+|_|  |_|_|_| |_|_|____/| .__/ \__,_|_|\___/ \__, |
+                       |_|                   |___/
+        SYNC • ASYNC • DURABLE • STRUCTURED
+```
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+> 面向可解释数据路径的 C++20 日志库：同步直写、异步解耦、批量可恢复、结构化可观测。
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![C++](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)]()
+![Platform](https://img.shields.io/badge/core-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
 
-更细的架构说明见 [`explanation.md`](explanation.md)。
+`minispdlog` 同时保留同步日志与异步队列：简单场景可以直接写 Sink，高吞吐场景可以切换到阻塞 MPMC 或无锁 MPSC 后端；需要更强落盘语义时，可使用双缓冲、WAL 与断尾修复；需要采集时，可直接输出 JSON Lines 或投递到回调、Qt 和 Linux UDP/TCP。
 
----
+本项目借鉴了通用日志库的分层思想，并在致谢中说明相关参考；它拥有独立实现、独立生命周期与独立功能边界，**不是 spdlog 的源码、ABI 或 API drop-in 替代品**。迁移前请阅读[与 spdlog 的设计边界](docs/design-vs-spdlog.md)。当前版本为 `0.1.0`，公开 API 仍可能随工程化完善而演进。
 
-## 目录
+### 三条清晰的数据路径
 
-- [快速 Demo（怎么用这个库）](#快速-demo怎么用这个库)
-- [构建](#构建)
-- [测试体系怎么用](#测试体系怎么用)
-- [examples 目录怎么用](#examples-目录怎么用)
-- [核心特性](#核心特性)
-- [更多用法](#更多用法)
-- [项目结构](#项目结构)
-- [致谢](#致谢)
+```text
+sync     call ──► format ─────────────► sink
+async    call ──► queue ──► worker ──► sink
+durable  sink ──► batch ──► WAL ─────► file
+```
 
----
+| 设计支柱 | 本项目的选择 |
+|----------|--------------|
+| 同步与异步并存 | 同步路径不依赖线程池；异步路径可选 blocking MPMC 或 lock-free MPSC |
+| 可说明的过载策略 | `block`、`overrun_oldest`、`discard_new`，并提供覆盖/丢弃计数 |
+| 耐久批处理 | 双缓冲批量写、WAL 回放、半截行修复，以及 `fflush` / `fsync` 档位 |
+| 结构化与旁路输出 | RFC 8259 JSON Lines、资源字段、回调、Qt，以及 Linux UDP/TCP |
 
-## 快速 Demo（怎么用这个库）
+## 五分钟上手
 
-最小可运行程序：彩色控制台 + 全局 API。
+### 最小同步示例
 
 ```cpp
 #include <minispdlog/minispdlog.h>
@@ -33,13 +45,67 @@
 int main() {
     auto logger = minispdlog::stdout_color_mt("app");
     minispdlog::set_default_logger(logger);
-
     minispdlog::info("Hello, {}!", "World");
-    minispdlog::warn("Warning: {}", 42);
-    minispdlog::error("Error: {}", "something went wrong");
-    return 0;
 }
 ```
+
+### 最小异步示例
+
+```cpp
+#include <minispdlog/async.h>
+
+int main() {
+    minispdlog::init_thread_pool(8192, 1);
+    auto logger = minispdlog::async_file_mt("app", "app.log", true);
+    logger->info("request_id={}", 42);
+    minispdlog::shutdown(); ///< 排空队列、停止工作线程并释放已注册 logger。
+}
+```
+
+### 构建并运行测试
+
+```bash
+# 在仓库根目录执行；third_party/fmt 已随仓库提供
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
+
+> 使用异步 logger 时，请在 `main()` 返回前调用 `minispdlog::shutdown()`。同步、异步和耐久写入的边界分别见[同步与异步模型](docs/sync-async-model.md)和[耐久性与恢复](docs/durability-and-recovery.md)。
+
+## 文档导航
+
+| 想了解什么 | 从这里开始 |
+|------------|------------|
+| 安装、链接与第一个 logger | [快速开始](docs/getting-started.md) |
+| 全部文档与成熟度 | [文档中心](docs/README.md) |
+| 同步、异步、队列和关闭语义 | [同步与异步模型](docs/sync-async-model.md) |
+| 双缓冲、WAL、断尾修复 | [耐久性与恢复](docs/durability-and-recovery.md) |
+| JSON 字段与采集约定 | [结构化日志](docs/structured-logging.md) |
+| Sink 能力与平台矩阵 | [Sink 指南](docs/sinks.md) |
+| 工厂、配置与 pattern 查询 | [API 速查](docs/api.md) |
+| 测试与性能验证 | [测试指南](docs/testing.md) · [性能方法](docs/performance.md) |
+| 完整架构长文 | [项目说明](explanation.md) · [设计决策](docs/design-decisions.md) · [PlantUML 图](docs/architecture.puml) |
+
+---
+
+## 目录
+
+- [五分钟上手](#五分钟上手)
+- [文档导航](#文档导航)
+- [功能指南](#功能指南)
+- [构建](#构建)
+- [测试体系怎么用](#测试体系怎么用)
+- [examples 目录怎么用](#examples-目录怎么用)
+- [核心特性](#核心特性)
+- [更多用法](#更多用法)
+- [项目结构](#项目结构)
+- [许可证](#许可证)
+- [致谢](#致谢)
+
+---
+
+## 功能指南
 
 默认 pattern 是 `[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] %v`。彩色 sink 只给 `%^`…`%$` 之间（级别名）上色，方括号保持终端默认色：
 
@@ -57,7 +123,7 @@ int main() {
 
 int main() {
     std::filesystem::create_directories("logs");
-    // 单文件上限 1MB，最多再保留 3 个归档：logs/app.log, app.1.log, ...
+    /// 单文件上限 1MB，最多再保留 3 个归档：logs/app.log, app.1.log, ...
     auto lg = minispdlog::rotating_logger_mt("app", "logs/app.log", 1024 * 1024, 3);
     lg->info("rotated file logging");
     lg->flush();
@@ -73,7 +139,7 @@ int main() {
 
 int main() {
     std::filesystem::create_directories("logs");
-    // logs/app.2026-09-05.log ；最多保留最近 7 个日期文件
+    /// logs/app.2026-09-05.log；最多保留最近 7 个日期文件。
     auto lg = minispdlog::daily_logger_mt("app", "logs/app.log", 0, 0, false, 7);
     lg->info("daily file logging");
     lg->flush();
@@ -98,7 +164,7 @@ int main() {
 }
 ```
 
-每行核心字段：`time`（UTC ISO-8601，`YYYY-MM-DDTHH:MM:SS.mmmZ`）、`ts`（Unix epoch 毫秒，方便数值过滤）、`level`、`level_num`（与 `minispdlog::level` 相同：trace=0 … off=6）、`logger`、`msg`、`tid`、`pid`；有源码位置时带 `source`。字符串按 RFC 8259 转义，并额外转义 U+2028 / U+2029，保证一行仍是一个 JSON 值。`add` / `add_int` / `add_bool` / `add_null` / `with_host()` 写入静态资源字段（service、env、host 等），采集侧可当 ECS `service.name` / `host.name` 用。不要占用 `time`/`ts`/`level`/`level_num`/`logger`/`msg`/`tid`/`pid`/`source`。也可 `sink->json().add(...)`，在开始打日志前配置。
+每行核心字段：`time`（UTC ISO-8601，`YYYY-MM-DDTHH:MM:SS.mmmZ`）、`ts`（Unix epoch 毫秒，方便数值过滤）、`level`、`level_num`（与 `minispdlog::level` 相同：trace=0 … off=6）、`logger`、`msg`、`tid`、`pid`；有源码位置时带 `source`。字符串按 RFC 8259 规则转义，并额外转义 U+2028 / U+2029，避免换行破坏单记录边界；调用方仍需提供有效 UTF-8。`add` / `add_int` / `add_bool` / `add_null` / `with_host()` 写入静态资源字段（service、env、host 等），采集侧可映射到自己的 schema。不要占用 `time`/`ts`/`level`/`level_num`/`logger`/`msg`/`tid`/`pid`/`source`。也可 `sink->json().add(...)`，在开始打日志前配置。
 
 任意 sink 也可只换 formatter：`sink->set_formatter(std::make_unique<minispdlog::json_formatter>());`。生产路径用专用 sink，`set_pattern` / `set_formatter` 都锁在 JSON Lines，且会保留已配置的资源字段：`json_logger_mt`（双缓冲批量写、LF 换行）、`rotating_json_logger_mt`、`daily_json_logger_mt`，容器 stdout/stderr 用 `stdout_json_mt` / `stderr_json_mt`。异步：`async_json_file_mt` / `async_json_rotating_mt`。JSON 也可走内核网络：`json_udp_logger_mt` / `json_tcp_logger_mt`（Linux）。
 
@@ -108,12 +174,12 @@ int main() {
 #include <minispdlog/minispdlog.h>
 
 int main() {
-    minispdlog::install_crash_flush();  // SIGSEGV/SIGABRT 时尽量把 front buffer 写出
-    minispdlog::batch_config cfg;       // 默认 64KiB / 256 条 / 50ms，fflush
-    cfg.commit = minispdlog::durability::fflush;  // 或 fsync
+    minispdlog::install_crash_flush(); ///< 收到 SIGSEGV/SIGABRT 时尽量写出前台缓冲。
+    minispdlog::batch_config cfg;      ///< 默认 64KiB、256 条、50ms，并执行 fflush。
+    cfg.commit = minispdlog::durability::fflush; ///< 也可选择 fsync。
     auto lg = minispdlog::buffered_logger_mt("app", "logs/app.log", true, cfg);
     lg->info("batched {}", 1);
-    lg->flush();  // 空闲时也要靠 flush / shutdown / 析构才落盘
+    lg->flush(); ///< 空闲时也要通过 flush、shutdown 或析构触发落盘。
     return 0;
 }
 ```
@@ -129,11 +195,13 @@ int main() {
     auto lg = minispdlog::callback_logger_mt("app",
         [](const minispdlog::details::log_msg& msg, const std::string& line) {
             if (msg.lvl >= minispdlog::level::error) {
-                // line 是已拥有的字符串，可存；payload / logger_name 只在回调期内有效
+                /// line 是已拥有的字符串，可保存；payload / logger_name 只在回调期间有效。
                 (void)line;
             }
         },
-        [] { /* flush 时汇总 */ });
+        [] {
+            /// 在 flush 时汇总批次状态。
+        });
     lg->error("disk full");
     lg->flush();
     minispdlog::drop("app");
@@ -142,7 +210,7 @@ int main() {
 
 `callback_logger_st` 单线程版；异步用 `async_callback_mt`（`#include <minispdlog/async.h>`）。回调跑在 sink 锁内，不要对同一 sink 再 `log`/`flush`。只要格式化行时用单参数 `void(const std::string&)`。无 Qt 时用回调；有窗口时用 `qt_sink`。
 
-Linux 内核网络（真实 `socket`/`bind`/`connect`/`send`/`recv`，不是模）：
+Linux 内核网络（真实 `socket`/`bind`/`connect`/`send`/`recv`，不是模拟服务）：
 
 ```cpp
 #include <minispdlog/minispdlog.h>
@@ -153,7 +221,7 @@ int main() {
     auto lg = minispdlog::udp_logger_mt("app", collector.local().host, collector.local().port);
     lg->info("shipped over UDP");
     lg->flush();
-    const auto line = collector.recv();  // 内核回环收到的数据报
+    const auto line = collector.recv(); ///< 内核回环收到的数据报。
     (void)line;
     return 0;
 }
@@ -161,17 +229,17 @@ int main() {
 
 TCP 用 `tcp_logger_mt` / `json_tcp_logger_mt`（失败会按 `network_config::reconnect` 重连）。采集进程可用 `network_listener`，或把 host/port 指到 syslog / Vector / Fluent Bit。异步：`async_udp_mt` / `async_tcp_mt` / `async_json_udp_mt` / `async_json_tcp_mt`。非 Linux 构造会抛错。
 
-异步文件（业务线程只入队；进程退出前要 `shutdown()`）：
+异步文件（调用线程先展开消息参数再入队，Sink formatter 与 I/O 在工作线程执行；进程退出前要 `shutdown()`）：
 
 ```cpp
 #include <minispdlog/async.h>
 
 int main() {
-    minispdlog::init_thread_pool(8192, 2);  // 或 init_lockfree_thread_pool(8192)
+    minispdlog::init_thread_pool(8192, 2); ///< 也可调用 init_lockfree_thread_pool(8192)。
     auto lg = minispdlog::async_file_mt("async", "async.log", true);
-    // 结构化异步：async_json_file_mt / async_json_rotating_mt
+    /// 结构化异步：async_json_file_mt / async_json_rotating_mt。
     lg->info("Fast async logging!");
-    minispdlog::shutdown();  // 排空队列、停线程池、drop 已注册 logger
+    minispdlog::shutdown(); ///< 排空队列、停止线程池并移除已注册 logger。
     return 0;
 }
 ```
@@ -182,12 +250,10 @@ int main() {
 
 ## 构建
 
-**依赖：** CMake ≥ 3.11 · C++20 编译器 · 已包含的 `third_party/fmt`
+**依赖：** CMake ≥ 3.20 · C++20 编译器 · 已包含的 `third_party/fmt`
 
 ```bash
-git clone --recursive <本仓库 URL>
-cd minispdlog
-
+# 在已取得的仓库根目录执行
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)          # Windows: cmake --build build --config Release
 ```
@@ -210,7 +276,7 @@ cmake --build build -j$(nproc)          # Windows: cmake --build build --config 
 
 ## 测试体系怎么用
 
-本仓库用 **doctest** 做单元测试：**一个可执行文件** `minispdlog_tests` 包含全部用例（`tests/unit/*.cpp`），比「每个文件一个 exe」编译更快。
+本仓库用 **doctest** 做单元测试：**一个可执行文件** `minispdlog_tests` 包含全部用例（`tests/unit/*.cpp`），CTest 再按 15 个组件源文件注册条目，既避免重复编译，也能并行运行并定位失败组件。
 
 ### 跑全部测试
 
@@ -376,7 +442,7 @@ cd build
 
 源码入口：`examples/network_log/main.cpp`。工厂：`udp_logger_mt/st`、`tcp_logger_mt/st`、`json_udp_logger_mt/st`、`json_tcp_logger_mt/st`、`network_logger_mt`；异步 `async_udp_mt` / `async_tcp_mt` / `async_json_udp_mt` / `async_json_tcp_mt`。Windows 不编此 example，单测会断言构造抛错。
 
-### 7. `examples/qt_log_viewer` — Qt 窗口看日志（可选
+### 7. `examples/qt_log_viewer` — Qt 窗口看日志（可选）
 把日志刷到 `QTextEdit` / `QPlainTextEdit`，依赖 Qt Widgets。
 
 ```bash
@@ -426,6 +492,7 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 
 - **MPMC 阻塞队列**（默认）：多 worker，`block` / `overrun_oldest` / `discard_new`
 - **无锁 MPSC**（可选）：`init_lockfree_thread_pool`，单 worker；只支持 `block` / `discard_new`，`overrun_oldest` 会抛异常
+- **生产者热路径**：短消息使用 256 字节内联存储；线程池共享快照按线程缓存，仅在配置版本变化时刷新
 - **接口透明**：`async_logger` 继承 `logger`，worker 走 `backend_sink_it_`（不再入队）；`async_file_mt` / `async_buffered_file_mt` / `async_json_file_mt` / `async_json_rotating_mt` / `async_callback_mt` / `async_udp_mt` / `async_tcp_mt` / `async_json_udp_mt` / `async_json_tcp_mt`
 - **关闭**：`minispdlog::shutdown()` 先 flush，再停全局线程池，再 `drop_all`
 
@@ -458,7 +525,10 @@ logger->info("This goes to both console and file");
 auto console = std::make_shared<minispdlog::sinks::color_console_sink_mt>();
 auto hook = std::make_shared<minispdlog::sinks::callback_sink_mt>(
     [](const minispdlog::details::log_msg& msg, const std::string& line) {
-        if (msg.lvl >= minispdlog::level::error) { /* 告警 / 计数 */ (void)line; }
+        if (msg.lvl >= minispdlog::level::error) {
+            /// 可在此处告警或计数。
+            (void)line;
+        }
     });
 auto logger = std::make_shared<minispdlog::logger>(
     "app", minispdlog::logger::sink_list{console, hook});
@@ -470,22 +540,22 @@ auto logger = std::make_shared<minispdlog::logger>(
 
 ```cpp
 auto sink = std::make_shared<minispdlog::sinks::console_sink_mt>();
-// set_pattern：用 pattern 字符串（编译成 pattern_formatter）
+/// set_pattern：使用 pattern 字符串，并编译为 pattern_formatter。
 sink->set_pattern("[%H:%M:%S.%e] [%L] [%s:%#] %v");
 
 auto logger = std::make_shared<minispdlog::logger>("app", sink);
 logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] [%s:%#] %v");
-logger->log(minispdlog::level::info, "hello {}", name);  // 一条 log 即可输出
+logger->log(minispdlog::level::info, "hello {}", name); ///< 一次 log 调用即可输出。
 
-// set_formatter：安装自定义 formatter（每 sink 一份 clone）
-// logger->set_formatter(std::make_unique<MyFormatter>());
+/// set_formatter：安装自定义 formatter，每个 sink 持有一份 clone。
+logger->set_formatter(std::make_unique<MyFormatter>());
 ```
 
 同一场景用同一套分隔：日期 `%Y-%m-%d`，时间 `%H:%M:%S.%e`（微秒用 `%f` 替代 `%e`），源码 `%s:%#` / `%@`，字段 `[..] [..]`。`%^`…`%$` 包住要上色的片段（默认只包 `%L`）。`log()` / `info()` 会填充时间、线程、进程和源码位置。
 
 结构化输出用 `json_formatter`（字段：UTC `time` / `ts` / `level` / `level_num` / `logger` / `msg` / `tid` / `pid`，有源码位置时带 `source`；资源字段用 `add` / `with_host`），不要用 pattern 去「手拼 JSON」。
 
-分层与异步热路径细节见 [`explanation.md`](explanation.md)。
+分层与异步热路径细节见[同步与异步模型](docs/sync-async-model.md)与保留的长篇导读 [`explanation.md`](explanation.md)。
 
 ---
 
@@ -495,6 +565,8 @@ logger->log(minispdlog::level::info, "hello {}", name);  // 一条 log 即可输
 minispdlog/
 ├── CMakeLists.txt
 ├── explanation.md              # 架构与用法长文
+├── Doxyfile / LICENSE          # API 文档配置 / MIT 许可证
+├── docs/                       # 专题指南、API 速查与架构图
 ├── include/minispdlog/         # 对外头文件
 │   ├── minispdlog.h            # 用户 API / 工厂
 │   ├── async.h / async_config.h
@@ -519,6 +591,14 @@ minispdlog/
 ├── scripts/                    # setup_qt 等
 └── third_party/fmt/
 ```
+
+---
+
+## 许可证
+
+minispdlog 自有代码采用 [MIT License](LICENSE)。`third_party/` 中的依赖保留各自许可证与版权声明；分发时请一并遵守。
+
+如需浏览中文 API 页面，在仓库根目录安装 Doxygen 后运行 `doxygen Doxyfile`，输出位于 `build/docs/doxygen/html/`。
 
 ---
 

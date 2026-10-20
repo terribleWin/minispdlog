@@ -1,6 +1,3 @@
-// C++20 deprecates free atomic_load/store for shared_ptr; keep them for
-// libstdc++ 11 (Ubuntu 22.04) which lacks std::atomic<std::shared_ptr<T>>.
-#define _SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING
 #include "minispdlog/logger.h"
 
 #include <algorithm>
@@ -8,29 +5,25 @@
 
 namespace minispdlog {
 
-logger::logger(std::string name)
-    : name_(std::move(name))
-    , sinks_(std::make_shared<sink_list>()) {}
+logger::logger(std::string name) : name_(std::move(name)), sinks_(std::make_shared<sink_list>()) {}
 
 logger::logger(std::string name, sinks::sink_ptr single_sink)
-    : name_(std::move(name))
-    , sinks_(std::make_shared<sink_list>()) {
+    : name_(std::move(name)), sinks_(std::make_shared<sink_list>()) {
     if (single_sink) {
-        sinks_->push_back(std::move(single_sink));
+        auto initial = sinks_.load(std::memory_order_relaxed);
+        initial->push_back(std::move(single_sink));
     }
 }
 
 logger::logger(std::string name, sink_list sinks)
-    : name_(std::move(name))
-    , sinks_(std::make_shared<sink_list>(std::move(sinks))) {}
+    : name_(std::move(name)), sinks_(std::make_shared<sink_list>(std::move(sinks))) {}
 
 std::shared_ptr<const logger::sink_list> logger::load_sinks_() const {
-    // All concurrent reads of sinks_ go through atomic_load (C++11 shared_ptr atomics).
-    return std::atomic_load_explicit(&sinks_, std::memory_order_acquire);
+    return sinks_.load(std::memory_order_acquire);
 }
 
 void logger::store_sinks_(std::shared_ptr<sink_list> next) {
-    std::atomic_store_explicit(&sinks_, std::move(next), std::memory_order_release);
+    sinks_.store(std::move(next), std::memory_order_release);
 }
 
 void logger::add_sink(sinks::sink_ptr sink) {
@@ -38,7 +31,7 @@ void logger::add_sink(sinks::sink_ptr sink) {
         return;
     }
     std::lock_guard<std::mutex> lock(sinks_mutex_);
-    auto current = std::atomic_load_explicit(&sinks_, std::memory_order_relaxed);
+    auto current = sinks_.load(std::memory_order_relaxed);
     auto next = std::make_shared<sink_list>(*current);
     next->push_back(std::move(sink));
     store_sinks_(std::move(next));
@@ -49,7 +42,7 @@ void logger::remove_sink(sinks::sink_ptr sink) {
         return;
     }
     std::lock_guard<std::mutex> lock(sinks_mutex_);
-    auto current = std::atomic_load_explicit(&sinks_, std::memory_order_relaxed);
+    auto current = sinks_.load(std::memory_order_relaxed);
     auto next = std::make_shared<sink_list>(*current);
     next->erase(std::remove(next->begin(), next->end(), sink), next->end());
     store_sinks_(std::move(next));
@@ -144,4 +137,4 @@ void logger::sink_it_(const details::log_msg& msg) {
     backend_sink_it_(msg);
 }
 
-}  // namespace minispdlog
+} ///< 结束 minispdlog 命名空间。

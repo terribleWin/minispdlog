@@ -1,4 +1,4 @@
-//spdlog 性能测试
+///spdlog 性能测试
 #include <chrono>
 #include <fstream>
 #include <iomanip>
@@ -186,27 +186,27 @@ int main() {
     std::cout << "========================================\n" << std::endl;
 
     const int SINGLE_ITERATIONS = 500000;
-    // const int MULTI_THREADS = 8;
+    /// 历史对照曾使用 8 个生产线程，当前统一为 16 个。
     const int MULTI_THREADS = 16;
-    const int MULTI_MESSAGES = 62500; // 16线程 x 62500条 = 100万条
+    const int MULTI_MESSAGES = 62500; ///< 16线程 x 62500条 = 100万条
 
     std::cout << "测试配置：" << std::endl;
     std::cout << "  单线程测试：" << SINGLE_ITERATIONS << " 条消息" << std::endl;
     std::cout << "  多线程测试：" << MULTI_THREADS << " 线程 x " << MULTI_MESSAGES << " 消息\n" << std::endl;
 
-    // 单线程测试
+    /// 单线程测试
     std::cout << "执行单线程测试..." << std::endl;
     benchmark_sync_st(SINGLE_ITERATIONS);
     benchmark_sync_mt(SINGLE_ITERATIONS);
     benchmark_async_mt(SINGLE_ITERATIONS);
     benchmark_async_overrun(SINGLE_ITERATIONS);
 
-    // 多线程测试
+    /// 多线程测试
     std::cout << "执行多线程测试..." << std::endl;
     benchmark_multi_thread_sync(MULTI_THREADS, MULTI_MESSAGES);
     benchmark_multi_thread_async(MULTI_THREADS, MULTI_MESSAGES);
 
-    // 打印结果
+    /// 打印结果
     std::cout << "\n========================================" << std::endl;
     std::cout << "测试结果汇总" << std::endl;
     std::cout << "========================================\n" << std::endl;
@@ -222,7 +222,7 @@ int main() {
         result.print();
     }
 
-    // 保存结果到文件
+    /// 保存结果到文件
     std::ofstream out("results/spdlog_results.txt");
     out << "Spdlog Benchmark Results\n\n";
     for (const auto& result : results) {

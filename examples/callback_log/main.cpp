@@ -5,8 +5,11 @@
 #include <mutex>
 #include <string>
 
-// Business hook: count levels, keep last few errors, print a flush summary.
-// Console sink still prints human-readable lines; the callback is the side channel.
+/**
+ * @brief 统计日志级别并保留最近错误的业务回调示例。
+ *
+ * 控制台 Sink 仍输出便于阅读的文本，回调 Sink 作为独立的业务旁路。
+ */
 struct log_hook {
     std::mutex mu;
     int info = 0;
@@ -38,8 +41,7 @@ struct log_hook {
 
     void on_flush() {
         std::lock_guard<std::mutex> lock(mu);
-        std::cout << "  [hook] flush summary: info=" << info << " warn=" << warn
-                  << " error=" << error << '\n';
+        std::cout << "  [hook] flush summary: info=" << info << " warn=" << warn << " error=" << error << '\n';
         for (const auto& line : last_errors) {
             std::cout << "  [hook] recent error: " << line;
         }
@@ -51,13 +53,10 @@ int main() {
 
     auto console = std::make_shared<minispdlog::sinks::color_console_sink_mt>();
     auto callback = std::make_shared<minispdlog::sinks::callback_sink_mt>(
-        [&hook](const minispdlog::details::log_msg& msg, const std::string& formatted) {
-            hook.on_log(msg, formatted);
-        },
+        [&hook](const minispdlog::details::log_msg& msg, const std::string& formatted) { hook.on_log(msg, formatted); },
         [&hook]() { hook.on_flush(); });
 
-    auto lg = std::make_shared<minispdlog::logger>(
-        "app", minispdlog::logger::sink_list{console, callback});
+    auto lg = std::make_shared<minispdlog::logger>("app", minispdlog::logger::sink_list{console, callback});
     minispdlog::register_logger(lg);
     minispdlog::set_default_logger(lg);
 

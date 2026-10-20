@@ -1,17 +1,56 @@
 #include "framework/doctest.h"
-#include "minispdlog/minispdlog.h"
 #include "framework/mock_sink.h"
-#include <thread>
+#include "minispdlog/minispdlog.h"
+
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 using namespace minispdlog;
 using minispdlog::tests::mock_sink_mt;
 
-// ============================================================
-// 测试套件：Logger 核心 (logger.h)
-// 标签: [logger]
-// ============================================================
+namespace {
+
+/** @brief 在第一条日志上暂停，用于观测 logger 的 Sink 快照语义。 */
+class snapshot_gate_sink : public sinks::base_sink<std::mutex> {
+public:
+    /** @brief 等待日志线程进入 Sink。 */
+    [[nodiscard]] bool wait_until_entered(std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(mu_);
+        return cv_.wait_for(lock, timeout, [this] { return entered_; });
+    }
+
+    /** @brief 释放已暂停的日志线程。 */
+    void release() {
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            released_ = true;
+        }
+        cv_.notify_all();
+    }
+
+protected:
+    void sink_it_(const details::log_msg&) override {
+        std::unique_lock<std::mutex> lock(mu_);
+        entered_ = true;
+        cv_.notify_all();
+        cv_.wait(lock, [this] { return released_; });
+    }
+
+    void flush_() override {}
+
+private:
+    std::mutex mu_;
+    std::condition_variable cv_;
+    bool entered_{false};
+    bool released_{false};
+};
+
+} ///< 结束匿名命名空间。
+
+/** @file test_logger.cpp @brief 覆盖 logger 的格式化、过滤、刷新与并发 Sink 快照。 */
 
 TEST_CASE("logger basic logging with mock sink [logger]") {
     auto mock = std::make_shared<mock_sink_mt>();
@@ -80,11 +119,11 @@ TEST_CASE("logger multi-sink independent levels [logger][multi][level]") {
     lg.add_sink(mock_info);
     lg.add_sink(mock_error);
 
-    lg.warn("warning");  // >= info, < error
-    REQUIRE(mock_info->message_count() == 1);   // info sink 接收
-    REQUIRE(mock_error->message_count() == 0);  // error sink 不接收
-    lg.error("error");   // >= info, >= error
-    REQUIRE(mock_info->message_count() == 2);   // 两个 sink 都接收
+    lg.warn("warning");                        ///< 达到 info，但尚未达到 error。
+    REQUIRE(mock_info->message_count() == 1);  ///< info sink 接收
+    REQUIRE(mock_error->message_count() == 0); ///< error sink 不接收
+    lg.error("error");                         ///< 同时达到 info 与 error。
+    REQUIRE(mock_info->message_count() == 2);  ///< 两个 sink 都接收
     REQUIRE(mock_error->message_count() == 1);
 }
 
@@ -126,9 +165,7 @@ TEST_CASE("set_pattern and set_formatter are distinct APIs [logger][formatter]")
             dest.append(msg.payload.data(), msg.payload.data() + msg.payload.size());
             dest.push_back('\n');
         }
-        std::unique_ptr<formatter> clone() const override {
-            return std::make_unique<prefix_formatter>();
-        }
+        std::unique_ptr<formatter> clone() const override { return std::make_unique<prefix_formatter>(); }
     };
 
     auto mock = std::make_shared<mock_sink_mt>();
@@ -163,13 +200,13 @@ TEST_CASE("logger flush_on triggers automatic flush [logger][flush]") {
     logger lg("FlushTest", mock);
     lg.flush_on(level::error);
 
-    // mock_sink 的 flush 是空操作，但 flush_on 机制应该被触发
     lg.info("no auto flush");
-    // flush_on 只应在 >= error 级别触发
-    lg.error("auto flush");
+    REQUIRE(mock->flush_count() == 0);
 
-    // 没有直接的断言方式（mock 不关心 flush），但不应崩溃
-    REQUIRE(true);
+    lg.error("auto flush");
+    REQUIRE(mock->flush_count() == 1);
+    lg.critical("auto flush again");
+    REQUIRE(mock->flush_count() == 2);
 }
 
 TEST_CASE("logger manual flush [logger][flush]") {
@@ -177,6 +214,7 @@ TEST_CASE("logger manual flush [logger][flush]") {
     logger lg("ManualFlush", mock);
     lg.info("before flush");
     REQUIRE_NOTHROW(lg.flush());
+    REQUIRE(mock->flush_count() == 1);
 }
 
 TEST_CASE("logger name is preserved [logger]") {
@@ -200,9 +238,10 @@ TEST_CASE("logger multithreaded safety [logger][thread]") {
             }
         });
     }
-    for (auto& t : threads) t.join();
+    for (auto& t : threads)
+        t.join();
 
-    // 多线程安全：所有消息都应该被捕获（mock_sink_mt 有 mutex 保护）
+    /// 多线程安全：所有消息都应该被捕获（mock_sink_mt 有 mutex 保护）
     REQUIRE(mock->message_count() == num_threads * msgs_per_thread);
 }
 
@@ -228,7 +267,7 @@ TEST_CASE("logger concurrent log/set_level/add_sink has no data race [logger][th
 
     threads.emplace_back([&lg]() {
         for (int i = 0; i < kMutations; ++i) {
-            // Both values still accept info, so primary must see every log.
+            /// 两个级别都接受 info，因此主 Sink 应收到全部日志。
             lg.set_level(i % 2 == 0 ? level::trace : level::info);
             (void)lg.get_level();
             (void)lg.should_log(level::info);
@@ -271,23 +310,45 @@ TEST_CASE("logger sinks() returns an isolated snapshot [logger]") {
     REQUIRE(second->message_count() == 1);
 }
 
+TEST_CASE("logger in-flight write keeps its copy-on-write sink snapshot [logger][thread]") {
+    auto gate = std::make_shared<snapshot_gate_sink>();
+    auto captured = std::make_shared<mock_sink_mt>();
+    logger lg("CowSnapshot", logger::sink_list{gate, captured});
+
+    std::thread writer([&lg] { lg.info("in-flight"); });
+    const bool entered = gate->wait_until_entered(std::chrono::seconds(1));
+    if (entered) {
+        lg.remove_sink(captured);
+    }
+    gate->release();
+    writer.join();
+
+    REQUIRE(entered);
+    REQUIRE(captured->message_count() == 1);
+    REQUIRE(captured->last_contains("in-flight"));
+    REQUIRE(lg.sinks().size() == 1);
+
+    lg.info("after removal");
+    REQUIRE(captured->message_count() == 1);
+}
+
 TEST_CASE("logger should_log respects logger level [logger][level]") {
     auto mock = std::make_shared<mock_sink_mt>();
     logger lg("ShouldLogTest", mock);
     lg.set_level(level::warn);
 
-    REQUIRE(lg.should_log(level::trace)    == false);
-    REQUIRE(lg.should_log(level::debug)    == false);
-    REQUIRE(lg.should_log(level::info)     == false);
-    REQUIRE(lg.should_log(level::warn)     == true);
-    REQUIRE(lg.should_log(level::error)    == true);
+    REQUIRE(lg.should_log(level::trace) == false);
+    REQUIRE(lg.should_log(level::debug) == false);
+    REQUIRE(lg.should_log(level::info) == false);
+    REQUIRE(lg.should_log(level::warn) == true);
+    REQUIRE(lg.should_log(level::error) == true);
     REQUIRE(lg.should_log(level::critical) == true);
 }
 
 TEST_CASE("logger compile-time level filtering [logger][compile]") {
-    // 编译时级别控制：如果 MINISPDLOG_ACTIVE_LEVEL 设置为 INFO，
-    // trace/debug 的日志在编译期就被移除，不会调用运行时逻辑
-    // 这个测试主要验证编译通过且行为正确
+    /// 编译时级别控制：如果 MINISPDLOG_ACTIVE_LEVEL 设置为 INFO，
+    /// trace/debug 的日志在编译期就被移除，不会调用运行时逻辑
+    /// 这个测试主要验证编译通过且行为正确
     auto mock = std::make_shared<mock_sink_mt>();
     logger lg("CompileTest", mock);
 
@@ -295,6 +356,6 @@ TEST_CASE("logger compile-time level filtering [logger][compile]") {
     lg.debug("debug msg");
     lg.info("info msg");
 
-    // 在默认编译设置下（trace 级别启用），所有消息都应该输出
+    /// 在默认编译设置下（trace 级别启用），所有消息都应该输出
     REQUIRE(mock->message_count() == 3);
 }

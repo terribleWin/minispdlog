@@ -40,12 +40,12 @@ bool file_exists(const std::filesystem::path& path) {
     return std::filesystem::exists(path, ec);
 }
 
-// Times far enough ahead that they cross the sink's next local midnight.
+/** @brief 构造足以跨过 Sink 下一个本地零点的时刻。 */
 log_clock::time_point next_calendar_day(int days_ahead) {
     return log_clock::now() + std::chrono::hours(24 * days_ahead + 12);
 }
 
-} // namespace
+} ///< 结束匿名命名空间。
 
 TEST_CASE("daily calc_filename inserts YYYY-MM-DD before extension [sink][daily]") {
     REQUIRE(sinks::daily_file_sink_mt::calc_filename("logs/app.log", 2026, 9, 5) == "logs/app.2026-09-05.log");

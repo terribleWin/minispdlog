@@ -159,8 +159,7 @@ TEST_CASE("json_udp_logger_mt factory ships JSON [sink][network][json][registry]
     network_listener listener(network_protocol::udp);
     json_formatter fmt;
     fmt.add("env", "test");
-    auto lg = json_udp_logger_mt("json-udp-factory", listener.local().host, listener.local().port,
-                                 std::move(fmt));
+    auto lg = json_udp_logger_mt("json-udp-factory", listener.local().host, listener.local().port, std::move(fmt));
     lg->info("factory-json");
     const auto line = listener.recv();
     REQUIRE(line.find("\"msg\":\"factory-json\"") != std::string::npos);

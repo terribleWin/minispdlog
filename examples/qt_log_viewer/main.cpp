@@ -6,16 +6,16 @@
  *   cmake --build build --target qt_log_viewer
  */
 #include "minispdlog/minispdlog.h"
-#include "minispdlog/sinks/qt_sink.h"
 #include "minispdlog/pattern_formatter.h"
+#include "minispdlog/sinks/qt_sink.h"
 
 #include <QApplication>
 #include <QMainWindow>
+#include <QPushButton>
 #include <QTextEdit>
+#include <QThread>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <QPushButton>
-#include <QThread>
 
 #include <chrono>
 #include <thread>
@@ -36,13 +36,12 @@ int main(int argc, char* argv[]) {
     window->setWindowTitle("minispdlog Qt viewer");
 
     auto logger = minispdlog::qt_logger_mt("gui", edit, "append");
-    logger->sinks()[0]->set_formatter(
-        std::make_unique<minispdlog::pattern_formatter>("[%H:%M:%S] [%l] %v"));
+    logger->sinks()[0]->set_formatter(std::make_unique<minispdlog::pattern_formatter>("[%H:%M:%S] [%l] %v"));
 
     logger->info("Qt log viewer ready");
 
     QObject::connect(btn, &QPushButton::clicked, [logger]() {
-        // 在非 GUI 线程写日志，验证 AutoConnection 投递
+        /// 在非 GUI 线程写日志，验证 AutoConnection 投递
         std::thread([logger]() {
             for (int i = 0; i < 20; ++i) {
                 logger->info("background message {}", i);

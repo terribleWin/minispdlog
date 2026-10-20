@@ -18,21 +18,17 @@ int main() {
 
     try {
         minispdlog::json_formatter fields;
-        fields.add("service", "minispdlog-demo")
-            .add("env", "dev")
-            .add_int("schema", 1)
-            .with_host();
+        fields.add("service", "minispdlog-demo").add("env", "dev").add_int("schema", 1).with_host();
 
-        auto file = minispdlog::json_logger_mt(
-            "json-file", "logs/demo.json.log", true, {}, fields);
+        auto file = minispdlog::json_logger_mt("json-file", "logs/demo.json.log", true, {}, fields);
         file->info("hello {}", "json");
         file->warn("path is C:\\temp\\app.log");
         file->error("quote: \"boom\"");
         file->flush();
 
-        auto rotating = minispdlog::rotating_json_logger_mt(
-            "json-rotating", "logs/demo.json.rotating.log", 256, 3, fields);
-        rotating->set_pattern("[%L] %v");  // ignored: JSON sinks stay JSON Lines
+        auto rotating =
+            minispdlog::rotating_json_logger_mt("json-rotating", "logs/demo.json.rotating.log", 256, 3, fields);
+        rotating->set_pattern("[%L] %v"); ///< 该设置会被忽略，JSON Sink 始终保持 JSON Lines。
         for (int i = 0; i < 8; ++i) {
             rotating->info("rotated-{}", i);
         }

@@ -1,0 +1,9 @@
+# 项目自有文本统一使用 LF，避免 Windows 与 POSIX 协作时产生整文件行尾差异。
+* text=auto eol=lf
+
+# 上游依赖保持原始字节，不把本项目的格式策略施加到第三方源码。
+third_party/** -text -eol
+tests/framework/doctest.h -text -eol
+
+# 二进制资源不参与文本规范化。
+*.png binary -eol

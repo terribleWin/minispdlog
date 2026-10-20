@@ -24,247 +24,241 @@
 namespace minispdlog {
 namespace {
 
-[[noreturn]] void throw_net(const std::string& what) {
-    throw std::runtime_error(what);
-}
+    [[noreturn]] void throw_net(const std::string& what) {
+        throw std::runtime_error(what);
+    }
 
 #ifndef __linux__
 
-[[noreturn]] void throw_not_linux() {
-    throw_net("network_sink requires Linux kernel sockets");
-}
+    [[noreturn]] void throw_not_linux() {
+        throw_net("network_sink requires Linux kernel sockets");
+    }
 
 #endif
 
 #ifdef __linux__
 
-void throw_errno(const char* what) {
-    throw std::system_error(errno, std::generic_category(), what);
-}
+    void throw_errno(const char* what) {
+        throw std::system_error(errno, std::generic_category(), what);
+    }
 
-int poll_fd(int fd, short events, int timeout_ms) {
-    pollfd pfd{};
-    pfd.fd = fd;
-    pfd.events = events;
-    for (;;) {
-        const int rc = ::poll(&pfd, 1, timeout_ms);
-        if (rc < 0 && errno == EINTR) {
-            continue;
+    int poll_fd(int fd, short events, int timeout_ms) {
+        pollfd pfd{};
+        pfd.fd = fd;
+        pfd.events = events;
+        for (;;) {
+            const int rc = ::poll(&pfd, 1, timeout_ms);
+            if (rc < 0 && errno == EINTR) {
+                continue;
+            }
+            return rc;
         }
-        return rc;
-    }
-}
-
-int remaining_ms(std::chrono::steady_clock::time_point deadline) {
-    const auto now = std::chrono::steady_clock::now();
-    if (now >= deadline) {
-        return 0;
-    }
-    return static_cast<int>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count());
-}
-
-sockaddr* as_sockaddr(void* addr) {
-    return static_cast<sockaddr*>(addr);
-}
-
-const sockaddr* as_sockaddr(const void* addr) {
-    return static_cast<const sockaddr*>(addr);
-}
-
-network_endpoint endpoint_from(const sockaddr* addr, socklen_t len) {
-    char host[NI_MAXHOST]{};
-    char serv[NI_MAXSERV]{};
-    if (::getnameinfo(addr, len, host, sizeof(host), serv, sizeof(serv),
-                      NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
-        return {};
-    }
-    network_endpoint ep;
-    ep.host = host;
-    ep.port = static_cast<std::uint16_t>(std::strtoul(serv, nullptr, 10));
-    return ep;
-}
-
-struct resolved_addr {
-    int family{AF_UNSPEC};
-    int socktype{0};
-    int ipproto{0};
-    sockaddr_storage storage{};
-    socklen_t len{0};
-};
-
-resolved_addr resolve(const std::string& host, std::uint16_t port, network_protocol protocol) {
-    addrinfo hints{};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = protocol == network_protocol::udp ? SOCK_DGRAM : SOCK_STREAM;
-    hints.ai_protocol = protocol == network_protocol::udp ? IPPROTO_UDP : IPPROTO_TCP;
-    hints.ai_flags = AI_NUMERICSERV;
-
-    addrinfo* raw = nullptr;
-    const std::string port_text = std::to_string(port);
-    const char* host_ptr = host.empty() ? nullptr : host.c_str();
-    const int rc = ::getaddrinfo(host_ptr, port_text.c_str(), &hints, &raw);
-    if (rc != 0 || raw == nullptr) {
-        throw_net(std::string("getaddrinfo: ") + ::gai_strerror(rc));
-    }
-    std::unique_ptr<addrinfo, void (*)(addrinfo*)> guard(raw, ::freeaddrinfo);
-
-    resolved_addr out;
-    out.family = raw->ai_family;
-    out.socktype = raw->ai_socktype;
-    out.ipproto = raw->ai_protocol;
-    out.len = static_cast<socklen_t>(raw->ai_addrlen);
-    std::memcpy(&out.storage, raw->ai_addr, static_cast<std::size_t>(raw->ai_addrlen));
-    return out;
-}
-
-class unique_fd {
-public:
-    unique_fd() = default;
-    explicit unique_fd(int fd)
-        : fd_(fd) {}
-    ~unique_fd() { reset(); }
-
-    unique_fd(const unique_fd&) = delete;
-    unique_fd& operator=(const unique_fd&) = delete;
-
-    unique_fd(unique_fd&& other) noexcept
-        : fd_(other.fd_) {
-        other.fd_ = -1;
     }
 
-    unique_fd& operator=(unique_fd&& other) noexcept {
-        if (this != &other) {
-            reset();
-            fd_ = other.fd_;
-            other.fd_ = -1;
+    int remaining_ms(std::chrono::steady_clock::time_point deadline) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) {
+            return 0;
         }
-        return *this;
+        return static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count());
     }
 
-    int get() const noexcept { return fd_; }
+    sockaddr* as_sockaddr(void* addr) {
+        return static_cast<sockaddr*>(addr);
+    }
 
-    int release() noexcept {
-        const int fd = fd_;
-        fd_ = -1;
+    const sockaddr* as_sockaddr(const void* addr) {
+        return static_cast<const sockaddr*>(addr);
+    }
+
+    network_endpoint endpoint_from(const sockaddr* addr, socklen_t len) {
+        char host[NI_MAXHOST]{};
+        char serv[NI_MAXSERV]{};
+        if (::getnameinfo(addr, len, host, sizeof(host), serv, sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
+            return {};
+        }
+        network_endpoint ep;
+        ep.host = host;
+        ep.port = static_cast<std::uint16_t>(std::strtoul(serv, nullptr, 10));
+        return ep;
+    }
+
+    struct resolved_addr {
+        int family{AF_UNSPEC};
+        int socktype{0};
+        int ipproto{0};
+        sockaddr_storage storage{};
+        socklen_t len{0};
+    };
+
+    resolved_addr resolve(const std::string& host, std::uint16_t port, network_protocol protocol) {
+        addrinfo hints{};
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = protocol == network_protocol::udp ? SOCK_DGRAM : SOCK_STREAM;
+        hints.ai_protocol = protocol == network_protocol::udp ? IPPROTO_UDP : IPPROTO_TCP;
+        hints.ai_flags = AI_NUMERICSERV;
+
+        addrinfo* raw = nullptr;
+        const std::string port_text = std::to_string(port);
+        const char* host_ptr = host.empty() ? nullptr : host.c_str();
+        const int rc = ::getaddrinfo(host_ptr, port_text.c_str(), &hints, &raw);
+        if (rc != 0 || raw == nullptr) {
+            throw_net(std::string("getaddrinfo: ") + ::gai_strerror(rc));
+        }
+        std::unique_ptr<addrinfo, void (*)(addrinfo*)> guard(raw, ::freeaddrinfo);
+
+        resolved_addr out;
+        out.family = raw->ai_family;
+        out.socktype = raw->ai_socktype;
+        out.ipproto = raw->ai_protocol;
+        out.len = static_cast<socklen_t>(raw->ai_addrlen);
+        std::memcpy(&out.storage, raw->ai_addr, static_cast<std::size_t>(raw->ai_addrlen));
+        return out;
+    }
+
+    class unique_fd {
+    public:
+        unique_fd() = default;
+        explicit unique_fd(int fd) : fd_(fd) {}
+        ~unique_fd() { reset(); }
+
+        unique_fd(const unique_fd&) = delete;
+        unique_fd& operator=(const unique_fd&) = delete;
+
+        unique_fd(unique_fd&& other) noexcept : fd_(other.fd_) { other.fd_ = -1; }
+
+        unique_fd& operator=(unique_fd&& other) noexcept {
+            if (this != &other) {
+                reset();
+                fd_ = other.fd_;
+                other.fd_ = -1;
+            }
+            return *this;
+        }
+
+        int get() const noexcept { return fd_; }
+
+        int release() noexcept {
+            const int fd = fd_;
+            fd_ = -1;
+            return fd;
+        }
+
+        void reset() noexcept {
+            if (fd_ >= 0) {
+                ::close(fd_);
+                fd_ = -1;
+            }
+        }
+
+    private:
+        int fd_{-1};
+    };
+
+    void set_sock_timeout(int fd, int optname, int timeout_ms) {
+        if (timeout_ms < 0) {
+            return;
+        }
+        timeval tv{};
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = static_cast<long>(timeout_ms % 1000) * 1000;
+        if (::setsockopt(fd, SOL_SOCKET, optname, &tv, sizeof(tv)) != 0) {
+            throw_errno("setsockopt timeout");
+        }
+    }
+
+    unique_fd open_socket(const resolved_addr& addr) {
+        unique_fd fd(::socket(addr.family, addr.socktype | SOCK_CLOEXEC, addr.ipproto));
+        if (fd.get() < 0) {
+            throw_errno("socket");
+        }
         return fd;
     }
 
-    void reset() noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
+    void connect_blocking(int fd, const resolved_addr& addr, const network_config& cfg) {
+        if (cfg.protocol == network_protocol::udp) {
+            if (::connect(fd, as_sockaddr(&addr.storage), addr.len) != 0) {
+                throw_errno("connect");
+            }
+            set_sock_timeout(fd, SO_SNDTIMEO, cfg.send_timeout_ms);
+            return;
         }
-    }
 
-private:
-    int fd_{-1};
-};
+        const int flags = ::fcntl(fd, F_GETFL, 0);
+        if (flags < 0) {
+            throw_errno("fcntl");
+        }
+        if (::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
+            throw_errno("fcntl");
+        }
 
-void set_sock_timeout(int fd, int optname, int timeout_ms) {
-    if (timeout_ms < 0) {
-        return;
-    }
-    timeval tv{};
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = static_cast<long>(timeout_ms % 1000) * 1000;
-    if (::setsockopt(fd, SOL_SOCKET, optname, &tv, sizeof(tv)) != 0) {
-        throw_errno("setsockopt timeout");
-    }
-}
-
-unique_fd open_socket(const resolved_addr& addr) {
-    unique_fd fd(::socket(addr.family, addr.socktype | SOCK_CLOEXEC, addr.ipproto));
-    if (fd.get() < 0) {
-        throw_errno("socket");
-    }
-    return fd;
-}
-
-void connect_blocking(int fd, const resolved_addr& addr, const network_config& cfg) {
-    if (cfg.protocol == network_protocol::udp) {
-        if (::connect(fd, as_sockaddr(&addr.storage), addr.len) != 0) {
+        const int rc = ::connect(fd, as_sockaddr(&addr.storage), addr.len);
+        if (rc != 0 && errno != EINPROGRESS) {
             throw_errno("connect");
         }
+        const int ready = poll_fd(fd, POLLOUT, cfg.connect_timeout_ms);
+        if (ready <= 0) {
+            throw_net("tcp connect timeout");
+        }
+        int err = 0;
+        socklen_t err_len = sizeof(err);
+        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &err_len) != 0) {
+            throw_errno("getsockopt");
+        }
+        if (err != 0) {
+            errno = err;
+            throw_errno("connect");
+        }
+        if (::fcntl(fd, F_SETFL, flags) != 0) {
+            throw_errno("fcntl");
+        }
+        if (cfg.tcp_nodelay) {
+            const int yes = 1;
+            if (::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes)) != 0) {
+                throw_errno("setsockopt TCP_NODELAY");
+            }
+        }
         set_sock_timeout(fd, SO_SNDTIMEO, cfg.send_timeout_ms);
-        return;
     }
 
-    const int flags = ::fcntl(fd, F_GETFL, 0);
-    if (flags < 0) {
-        throw_errno("fcntl");
-    }
-    if (::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
-        throw_errno("fcntl");
-    }
-
-    const int rc = ::connect(fd, as_sockaddr(&addr.storage), addr.len);
-    if (rc != 0 && errno != EINPROGRESS) {
-        throw_errno("connect");
-    }
-    const int ready = poll_fd(fd, POLLOUT, cfg.connect_timeout_ms);
-    if (ready <= 0) {
-        throw_net("tcp connect timeout");
-    }
-    int err = 0;
-    socklen_t err_len = sizeof(err);
-    if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &err_len) != 0) {
-        throw_errno("getsockopt");
-    }
-    if (err != 0) {
-        errno = err;
-        throw_errno("connect");
-    }
-    if (::fcntl(fd, F_SETFL, flags) != 0) {
-        throw_errno("fcntl");
-    }
-    if (cfg.tcp_nodelay) {
-        const int yes = 1;
-        if (::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes)) != 0) {
-            throw_errno("setsockopt TCP_NODELAY");
-        }
-    }
-    set_sock_timeout(fd, SO_SNDTIMEO, cfg.send_timeout_ms);
-}
-
-ssize_t send_all(int fd, const char* data, std::size_t size, network_protocol protocol) {
-    std::size_t off = 0;
-    while (off < size) {
-        const ssize_t n = ::send(fd, data + off, size - off, MSG_NOSIGNAL);
-        if (n < 0) {
-            if (errno == EINTR) {
-                continue;
+    ssize_t send_all(int fd, const char* data, std::size_t size, network_protocol protocol) {
+        std::size_t off = 0;
+        while (off < size) {
+            const ssize_t n = ::send(fd, data + off, size - off, MSG_NOSIGNAL);
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                return -1;
             }
-            return -1;
-        }
-        if (n == 0) {
+            if (n == 0) {
+                if (protocol == network_protocol::udp) {
+                    return static_cast<ssize_t>(off);
+                }
+                errno = EPIPE;
+                return -1;
+            }
+            off += static_cast<std::size_t>(n);
             if (protocol == network_protocol::udp) {
-                return static_cast<ssize_t>(off);
+                break;
             }
-            errno = EPIPE;
-            return -1;
         }
-        off += static_cast<std::size_t>(n);
-        if (protocol == network_protocol::udp) {
-            break;
-        }
+        return static_cast<ssize_t>(off);
     }
-    return static_cast<ssize_t>(off);
-}
 
-std::optional<std::string> pop_line(std::string& buf) {
-    const auto pos = buf.find('\n');
-    if (pos == std::string::npos) {
-        return std::nullopt;
+    std::optional<std::string> pop_line(std::string& buf) {
+        const auto pos = buf.find('\n');
+        if (pos == std::string::npos) {
+            return std::nullopt;
+        }
+        std::string line = buf.substr(0, pos + 1);
+        buf.erase(0, pos + 1);
+        return line;
     }
-    std::string line = buf.substr(0, pos + 1);
-    buf.erase(0, pos + 1);
-    return line;
-}
 
 #endif
 
-} // namespace
+} ///< 结束匿名命名空间。
 
 struct network_client::impl {
     network_config cfg{};
@@ -278,8 +272,7 @@ struct network_client::impl {
     std::uint64_t packets_dropped{0};
 };
 
-network_client::network_client(network_config cfg)
-    : impl_(std::make_unique<impl>()) {
+network_client::network_client(network_config cfg) : impl_(std::make_unique<impl>()) {
     impl_->cfg = std::move(cfg);
 #ifdef __linux__
     impl_->dest = resolve(impl_->cfg.host, impl_->cfg.port, impl_->cfg.protocol);
@@ -399,8 +392,7 @@ void network_client::send(const char* data, std::size_t size) {
             return false;
         }
         const ssize_t n = send_all(impl_->fd.get(), data, size, impl_->cfg.protocol);
-        if (n < 0 || (impl_->cfg.protocol == network_protocol::udp &&
-                      static_cast<std::size_t>(n) != size)) {
+        if (n < 0 || (impl_->cfg.protocol == network_protocol::udp && static_cast<std::size_t>(n) != size)) {
             return false;
         }
         ++impl_->packets_sent;
@@ -504,8 +496,7 @@ struct network_listener::impl {
     bool have_peer{false};
 };
 
-network_listener::network_listener(network_protocol protocol, std::string bind_host,
-                                   std::uint16_t port)
+network_listener::network_listener(network_protocol protocol, std::string bind_host, std::uint16_t port)
     : impl_(std::make_unique<impl>()) {
     impl_->protocol = protocol;
 #ifdef __linux__
@@ -584,8 +575,7 @@ void network_listener::send(const char* data, std::size_t size) {
             throw_net("network_listener::send has no UDP peer");
         }
         const ssize_t n =
-            ::sendto(impl_->listen_fd.get(), data, size, MSG_NOSIGNAL, as_sockaddr(&impl_->peer),
-                     impl_->peer_len);
+            ::sendto(impl_->listen_fd.get(), data, size, MSG_NOSIGNAL, as_sockaddr(&impl_->peer), impl_->peer_len);
         if (n < 0 || static_cast<std::size_t>(n) != size) {
             throw_errno("sendto");
         }
@@ -614,8 +604,7 @@ std::string network_listener::recv(int timeout_ms) {
 
 std::optional<std::string> network_listener::try_recv(int timeout_ms) {
 #ifdef __linux__
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms < 0 ? 0 : timeout_ms);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms < 0 ? 0 : timeout_ms);
 
     if (impl_->protocol == network_protocol::udp) {
         const int wait = remaining_ms(deadline);
@@ -626,8 +615,7 @@ std::optional<std::string> network_listener::try_recv(int timeout_ms) {
         char buf[65536];
         sockaddr_storage peer{};
         socklen_t peer_len = sizeof(peer);
-        const ssize_t n =
-            ::recvfrom(impl_->listen_fd.get(), buf, sizeof(buf), 0, as_sockaddr(&peer), &peer_len);
+        const ssize_t n = ::recvfrom(impl_->listen_fd.get(), buf, sizeof(buf), 0, as_sockaddr(&peer), &peer_len);
         if (n < 0) {
             if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
                 return std::nullopt;
@@ -648,8 +636,7 @@ std::optional<std::string> network_listener::try_recv(int timeout_ms) {
     while (true) {
         if (impl_->conn_fd.get() < 0) {
             const int wait = remaining_ms(deadline);
-            if (timeout_ms >= 0 && wait == 0 &&
-                std::chrono::steady_clock::now() >= deadline) {
+            if (timeout_ms >= 0 && wait == 0 && std::chrono::steady_clock::now() >= deadline) {
                 return std::nullopt;
             }
             const int ready = poll_fd(impl_->listen_fd.get(), POLLIN, wait);
@@ -658,8 +645,7 @@ std::optional<std::string> network_listener::try_recv(int timeout_ms) {
             }
             sockaddr_storage peer{};
             socklen_t peer_len = sizeof(peer);
-            const int raw = ::accept4(impl_->listen_fd.get(), as_sockaddr(&peer), &peer_len,
-                                      SOCK_CLOEXEC);
+            const int raw = ::accept4(impl_->listen_fd.get(), as_sockaddr(&peer), &peer_len, SOCK_CLOEXEC);
             if (raw < 0) {
                 if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
                     continue;
@@ -719,4 +705,4 @@ std::optional<std::string> network_listener::try_recv(int timeout_ms) {
 #endif
 }
 
-} // namespace minispdlog
+} ///< 结束 minispdlog 命名空间。

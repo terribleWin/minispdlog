@@ -9,12 +9,12 @@ using namespace minispdlog;
 void test_macros_compile() {
     std::cout << "\n========== 测试1:编译期宏接口编译验证 ==========\n";
 
-    // 设置默认 logger 让宏 API 能正常工作
+    /// 设置默认 logger 让宏 API 能正常工作
     auto sink = std::make_shared<sinks::file_sink_mt>("logs/macro_test.log", true);
     auto bench_logger = std::make_shared<logger>("macro_test", sink);
     set_default_logger(bench_logger);
 
-    // 验证每个宏都能正常编译且调用全局函数
+    /// 验证每个宏都能正常编译且调用全局函数
     MINISPDLOG_TRACE("Macro TRACE message {}", 1);
     MINISPDLOG_DEBUG("Macro DEBUG message {}", 2);
     MINISPDLOG_INFO("Macro INFO message {}", 3);
@@ -24,7 +24,7 @@ void test_macros_compile() {
 
     bench_logger->flush();
 
-    // 验证文件不为空（宏确实产生了输出）
+    /// 验证文件不为空（宏确实产生了输出）
     std::ifstream file("logs/macro_test.log");
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
@@ -41,8 +41,8 @@ void test_macro_with_logger_object() {
     auto bench_logger = std::make_shared<logger>("filter_test", sink);
     bench_logger->set_level(level::warn);
 
-    // 直接通过 logger 对象调用（不走宏的 default_logger）
-    // 验证宏定义本身能被正确预处理
+    /// 直接通过 logger 对象调用（不走宏的 default_logger）
+    /// 验证宏定义本身能被正确预处理
     bench_logger->trace("Should NOT appear");
     bench_logger->debug("Should NOT appear");
     bench_logger->info("Should NOT appear");

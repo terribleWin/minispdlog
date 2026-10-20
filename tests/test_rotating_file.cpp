@@ -6,13 +6,13 @@
 
 using namespace minispdlog;
 
-// 辅助函数:检查文件是否存在
+/// 辅助函数:检查文件是否存在
 bool file_exists(const std::string& filename) {
     std::ifstream f(filename);
     return f.good();
 }
 
-// 辅助函数:获取文件大小
+/// 辅助函数:获取文件大小
 size_t get_file_size(const std::string& filename) {
     std::ifstream f(filename, std::ios::binary | std::ios::ate);
     if (!f.good()) {
@@ -21,7 +21,7 @@ size_t get_file_size(const std::string& filename) {
     return static_cast<size_t>(f.tellg());
 }
 
-// 辅助函数:读取文件内容
+/// 辅助函数:读取文件内容
 std::string read_file(const std::string& filename) {
     std::ifstream f(filename);
     if (!f.good()) {
@@ -35,7 +35,7 @@ void test_filename_calculation() {
 
     using rotating_file_sink = sinks::rotating_file_sink_mt;
 
-    // 测试不同索引的文件名
+    /// 测试不同索引的文件名
     std::string base = "logs/mylog.txt";
 
     std::cout << "基础文件名: " << base << "\n\n";
@@ -45,7 +45,7 @@ void test_filename_calculation() {
         std::cout << "索引 " << i << ": " << filename << "\n";
     }
 
-    // 测试没有扩展名的情况
+    /// 测试没有扩展名的情况
     std::cout << "\n没有扩展名的情况:\n";
     std::string no_ext = "logs/mylog";
     for (size_t i = 0; i <= 2; ++i) {
@@ -58,10 +58,10 @@ void test_basic_rotation() {
     std::cout << "\n========== 测试2:基础轮转功能 ==========\n";
 
     std::string base_filename = "logs/rotating_basic.log";
-    size_t max_size = 1024; // 1KB
+    size_t max_size = 1024; ///< 单文件上限为 1 KiB。
     size_t max_files = 3;
 
-    // 删除旧文件
+    /// 删除旧文件
     std::remove(base_filename.c_str());
     system("rm -f logs/rotating_basic*");
 
@@ -69,8 +69,8 @@ void test_basic_rotation() {
 
     std::cout << "配置: max_size=" << max_size << " bytes, max_files=" << max_files << "\n\n";
 
-    // 写入足够多的日志以触发轮转
-    std::string long_msg(100, 'A'); // 100字节的消息
+    /// 写入足够多的日志以触发轮转
+    std::string long_msg(100, 'A'); ///< 100字节的消息
 
     for (int i = 0; i < 15; ++i) {
         logger->info("{} - Message {}", long_msg, i);
@@ -94,7 +94,7 @@ void test_size_trigger() {
     std::cout << "\n========== 测试3:大小触发轮转 ==========\n";
 
     std::string base_filename = "logs/size_trigger.log";
-    size_t max_size = 512; // 512 bytes
+    size_t max_size = 512; ///< 单文件上限为 512 字节。
     size_t max_files = 2;
 
     std::remove(base_filename.c_str());
@@ -104,14 +104,14 @@ void test_size_trigger() {
 
     std::cout << "max_size=" << max_size << " bytes\n";
 
-    // 写入一些日志
+    /// 写入一些日志
     for (int i = 0; i < 10; ++i) {
         logger->info("Message {} with some padding text to increase size", i);
     }
 
     logger->flush();
 
-    // 检查文件大小
+    /// 检查文件大小
     size_t current_size = get_file_size(base_filename);
     size_t rotated_size = get_file_size(sinks::rotating_file_sink_mt::calc_filename(base_filename, 1));
 
@@ -134,10 +134,10 @@ void test_multiple_rotations() {
     std::cout << "\n========== 测试4:多次轮转 ==========\n";
 
     std::string base_filename = "logs/multi_rotate.log";
-    size_t max_size = 300; // 300 bytes
+    size_t max_size = 300; ///< 单文件上限为 300 字节。
     size_t max_files = 6;
 
-    // 清理旧文件
+    /// 清理旧文件
     std::remove(base_filename.c_str());
     for (size_t i = 1; i <= max_files; ++i) {
         std::remove(sinks::rotating_file_sink_mt::calc_filename(base_filename, i).c_str());
@@ -145,7 +145,7 @@ void test_multiple_rotations() {
 
     auto logger = rotating_logger_mt("multi_rotate", base_filename, max_size, max_files);
 
-    // 写入大量日志以触发多次轮转
+    /// 写入大量日志以触发多次轮转
     for (int i = 0; i < 50; ++i) {
         logger->info("Rotation test message number {} with padding", i);
     }
@@ -175,12 +175,12 @@ void test_max_files_limit() {
     size_t max_size = 200;
     size_t max_files = 3;
 
-    size_t expected_total = max_files + 1; // 4 个文件
+    size_t expected_total = max_files + 1; ///< 4 个文件
 
     std::cout << "max_files=" << max_files << " (最多保留 " << expected_total << " 个文件: 1个当前 + " << max_files
               << "个历史)\n\n";
 
-    // 清理
+    /// 清理
     std::remove(base_filename.c_str());
     for (size_t i = 1; i <= max_files + 2; ++i) {
         std::remove(sinks::rotating_file_sink_mt::calc_filename(base_filename, i).c_str());
@@ -188,7 +188,7 @@ void test_max_files_limit() {
 
     auto logger = rotating_logger_mt("max_files_test", base_filename, max_size, max_files);
 
-    // 写入足够多的日志以触发多次轮转
+    /// 写入足够多的日志以触发多次轮转
     for (int i = 0; i < 100; ++i) {
         logger->info("Testing max files limit message {}", i);
     }
@@ -232,11 +232,11 @@ void test_content_integrity() {
 
     auto logger = rotating_logger_mt("content_test", base_filename, max_size, max_files);
 
-    // 写入一些可识别的消息
+    /// 写入一些可识别的消息
     logger->info("FIRST_MESSAGE");
     logger->info("SECOND_MESSAGE");
 
-    // 写入足够的数据触发轮转
+    /// 写入足够的数据触发轮转
     for (int i = 0; i < 10; ++i) {
         logger->info("Padding message to trigger rotation {}", i);
     }
@@ -244,7 +244,7 @@ void test_content_integrity() {
     logger->info("AFTER_ROTATION");
     logger->flush();
 
-    // 检查内容
+    /// 检查内容
     std::string current_content = read_file(base_filename);
     std::string rotated_content = read_file(sinks::rotating_file_sink_mt::calc_filename(base_filename, 1));
 
@@ -257,17 +257,17 @@ void test_content_integrity() {
 void test_factory_function() {
     std::cout << "\n========== 测试7:工厂函数 ==========\n";
 
-    // 使用工厂函数创建 rotating logger
+    /// 使用工厂函数创建 rotating logger
     auto logger = rotating_logger_mt("factory_logger", "logs/factory.log",
-                                     1024 * 1024, // 1MB
-                                     5            // 5 个文件
+                                     1024 * 1024, ///< 单文件上限为 1 MiB。
+                                     5            ///< 5 个文件
     );
 
     logger->info("Created via factory function");
     logger->warn("This is a warning");
     logger->error("This is an error");
 
-    // 从 registry 获取
+    /// 从 registry 获取
     auto retrieved = get("factory_logger");
     if (retrieved) {
         std::cout << " 可以从 registry 获取\n";
@@ -291,7 +291,7 @@ void test_concurrent_writes() {
 
     auto logger = rotating_logger_mt("concurrent", base_filename, max_size, max_files);
 
-    // 多线程写入
+    /// 多线程写入
     auto write_logs = [&logger](int thread_id) {
         for (int i = 0; i < 20; ++i) {
             logger->info("Thread {} - Message {}", thread_id, i);
@@ -326,7 +326,7 @@ void test_performance() {
     std::cout << "\n========== 测试9:性能测试 ==========\n";
 
     std::string base_filename = "logs/performance.log";
-    size_t max_size = 1024 * 1024; // 1MB
+    size_t max_size = 1024 * 1024; ///< 单文件上限为 1 MiB。
     size_t max_files = 5;
 
     std::remove(base_filename.c_str());
@@ -362,22 +362,22 @@ void test_performance() {
 void test_real_world_scenario() {
     std::cout << "\n========== 测试10:真实场景模拟 ==========\n";
 
-    // 模拟应用程序日志配置
-    // 1. 应用主日志:5MB 轮转,保留 3 个文件
+    /// 模拟应用程序日志配置
+    /// 1. 应用主日志:5MB 轮转,保留 3 个文件
     auto app_logger = rotating_logger_mt("app", "logs/app.log",
-                                         5 * 1024 * 1024, // 5MB
+                                         5 * 1024 * 1024, ///< 单文件上限为 5 MiB。
                                          3);
 
-    // 2. 错误日志:10MB 轮转,保留 5 个文件
+    /// 2. 错误日志:10MB 轮转,保留 5 个文件
     auto error_logger = rotating_logger_mt("errors", "logs/errors.log",
-                                           10 * 1024 * 1024, // 10MB
+                                           10 * 1024 * 1024, ///< 单文件上限为 10 MiB。
                                            5);
 
     std::cout << "应用日志配置:\n";
     std::cout << "  app.log: 5MB × 3 个文件\n";
     std::cout << "  errors.log: 10MB × 5 个文件\n\n";
 
-    // 模拟应用运行
+    /// 模拟应用运行
     std::cout << "模拟应用运行...\n";
 
     for (int i = 0; i < 100; ++i) {
@@ -403,7 +403,7 @@ void test_real_world_scenario() {
 void test_edge_cases() {
     std::cout << "\n========== 测试11:边界情况 ==========\n";
 
-    // 测试1: 非常小的 max_size
+    /// 测试1: 非常小的 max_size
     try {
         system("rm -f logs/tiny*");
         std::cout << "测试非常小的 max_size (100 bytes)...\n";
@@ -417,7 +417,7 @@ void test_edge_cases() {
         std::cout << " 异常: " << e.what() << "\n";
     }
 
-    // 测试2: max_files = 1
+    /// 测试2: max_files = 1
     try {
         std::cout << "\n测试 max_files = 1...\n";
         auto logger2 = rotating_logger_mt("single", "logs/single.log", 500, 1);
@@ -431,7 +431,7 @@ void test_edge_cases() {
         std::cout << " 异常: " << e.what() << "\n";
     }
 
-    // 测试3: 无效参数
+    /// 测试3: 无效参数
     std::cout << "\n测试无效参数...\n";
     try {
         auto logger3 = rotating_logger_mt("invalid", "logs/invalid.log", 0, 3);
@@ -446,7 +446,7 @@ int main() {
     std::cout << "║ MiniSpdlog 第6天测试 - Rotating File Sink   ║\n";
     std::cout << "╚════════════════════════════════════════════╝\n";
 
-    // 创建日志目录
+    /// 创建日志目录
     system("mkdir -p logs");
 
     try {
