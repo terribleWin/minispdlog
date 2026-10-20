@@ -174,6 +174,22 @@ TEST_CASE("pattern_formatter set_pattern via sink API [formatter]") {
     REQUIRE(mock->at(0) == "hello world\n");
 }
 
+TEST_CASE("pattern_formatter escapes percent signs [formatter][pattern]") {
+    details::log_msg msg("lg", level::info, "done");
+    pattern_formatter formatter("Progress: 50%% - %v");
+    fmt::memory_buffer buf;
+    formatter.format(msg, buf);
+    REQUIRE(std::string(buf.data(), buf.size()) == "Progress: 50% - done\n");
+}
+
+TEST_CASE("pattern_formatter preserves unknown placeholders [formatter][pattern]") {
+    details::log_msg msg("lg", level::info, "done");
+    pattern_formatter formatter("[%Z] %v");
+    fmt::memory_buffer buf;
+    formatter.format(msg, buf);
+    REQUIRE(std::string(buf.data(), buf.size()) == "[%Z] done\n");
+}
+
 TEST_CASE("pattern_formatter milliseconds and microseconds [formatter]") {
     const auto tp = log_clock::time_point{} + std::chrono::milliseconds(1234) + std::chrono::microseconds(56);
     details::log_msg msg(tp, details::source_loc("dir/foo.cpp", 42, "bar"), "lg", level::info, "hi");
@@ -181,6 +197,83 @@ TEST_CASE("pattern_formatter milliseconds and microseconds [formatter]") {
     fmt::memory_buffer buf;
     fmt.format(msg, buf);
     REQUIRE(std::string(buf.data(), buf.size()) == "234 234056\n");
+}
+
+TEST_CASE("pattern_formatter normalizes subsecond fields before Unix epoch [formatter][time]") {
+    const auto tp = log_clock::time_point{} - std::chrono::milliseconds(1);
+    details::log_msg msg(tp, details::source_loc{}, "lg", level::info, "x");
+    pattern_formatter fmt("%e %f");
+    fmt::memory_buffer buf;
+    fmt.format(msg, buf);
+    REQUIRE(std::string(buf.data(), buf.size()) == "999 999000\n");
+}
+
+TEST_CASE("pattern_formatter single-line payload escapes controls and backslash [formatter][pattern]") {
+    std::string payload = "alpha\\beta\r\n\t中文";
+    details::log_msg msg(log_clock::time_point{}, details::source_loc{}, "lg", level::info,
+                         string_view_t(payload.data(), payload.size()));
+    pattern_formatter formatter("%q");
+    fmt::memory_buffer buf;
+    formatter.format(msg, buf);
+    REQUIRE(std::string(buf.data(), buf.size()) == "alpha\\\\beta\\r\\n\\t中文\n");
+}
+
+TEST_CASE("pattern_formatter single-line payload escapes every C0 control [formatter][pattern]") {
+    std::string payload;
+    for (unsigned char ch = 0; ch < 0x20U; ++ch) {
+        payload.push_back(static_cast<char>(ch));
+    }
+    details::log_msg msg(log_clock::time_point{}, details::source_loc{}, "lg", level::info,
+                         string_view_t(payload.data(), payload.size()));
+    pattern_formatter formatter("%q");
+    fmt::memory_buffer buf;
+    formatter.format(msg, buf);
+    const std::string expected = "\\x00\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08\\t\\n\\x0B\\x0C\\r\\x0E\\x0F"
+                                 "\\x10\\x11\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1A\\x1B\\x1C\\x1D\\x1E\\x1F\n";
+    REQUIRE(std::string(buf.data(), buf.size()) == expected);
+}
+
+TEST_CASE("pattern_formatter single-line payload escapes Unicode line separators [formatter][pattern]") {
+    const std::string payload = "a\xC2\x85"
+                                "b\xE2\x80\xA8"
+                                "c\xE2\x80\xA9"
+                                "d";
+    details::log_msg msg("lg", level::info, payload);
+    pattern_formatter formatter("%q");
+    fmt::memory_buffer buf;
+    formatter.format(msg, buf);
+    REQUIRE(std::string(buf.data(), buf.size()) == "a\\u0085b\\u2028c\\u2029d\n");
+}
+
+TEST_CASE("pattern_formatter raw payload remains byte-for-byte unchanged [formatter][pattern]") {
+    std::string payload{"a"};
+    payload.push_back('\0');
+    payload += "b\r\n\t\\";
+    details::log_msg msg(log_clock::time_point{}, details::source_loc{}, "lg", level::info,
+                         string_view_t(payload.data(), payload.size()));
+    pattern_formatter formatter("%v");
+    fmt::memory_buffer buf;
+    formatter.format(msg, buf);
+    payload.push_back('\n');
+    REQUIRE(std::string(buf.data(), buf.size()) == payload);
+}
+
+TEST_CASE("pattern_formatter UTC RFC3339 and Unix milliseconds [formatter][pattern][time]") {
+    const auto duration = std::chrono::duration_cast<log_clock::duration>(std::chrono::milliseconds{1'700'000'000'123});
+    details::log_msg msg(log_clock::time_point{duration}, details::source_loc{}, "lg", level::info, "x");
+    pattern_formatter formatter("%u %E");
+    fmt::memory_buffer buf;
+    formatter.format(msg, buf);
+    REQUIRE(std::string(buf.data(), buf.size()) == "2023-11-14T22:13:20.123Z 1700000000123\n");
+}
+
+TEST_CASE("pattern_formatter UTC and epoch milliseconds floor before Unix epoch [formatter][pattern][time]") {
+    const auto duration = std::chrono::duration_cast<log_clock::duration>(-std::chrono::microseconds{1});
+    details::log_msg msg(log_clock::time_point{duration}, details::source_loc{}, "lg", level::info, "x");
+    pattern_formatter formatter("%u %E");
+    fmt::memory_buffer buf;
+    formatter.format(msg, buf);
+    REQUIRE(std::string(buf.data(), buf.size()) == "1969-12-31T23:59:59.999Z -1\n");
 }
 
 TEST_CASE("pattern_formatter process id [formatter]") {

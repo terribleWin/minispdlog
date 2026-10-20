@@ -6,6 +6,8 @@
 namespace minispdlog {
 namespace {
 
+    constexpr char hex_digits[] = "0123456789ABCDEF";
+
     void append_str(fmt::memory_buffer& dest, const char* s) {
         if (s == nullptr || *s == '\0') {
             return;
@@ -26,7 +28,70 @@ namespace {
         return base;
     }
 
-} ///< 结束匿名命名空间。
+    /**
+     * @brief 追加经过单行安全转义的日志正文。
+     *
+     * 普通字节按连续区间批量复制；反斜杠、C0 控制字符与 Unicode 行分隔符进入转义路径。
+     * 其余高位字节保持原样，避免破坏 UTF-8 文本。
+     */
+    void append_single_line_payload(fmt::memory_buffer& dest, string_view_t payload) {
+        const auto* data = payload.data();
+        const auto size = payload.size();
+        if (size == 0) {
+            return;
+        }
+        std::size_t run_begin = 0;
+        for (std::size_t i = 0; i < size; ++i) {
+            const auto ch = static_cast<unsigned char>(data[i]);
+            const auto remaining = size - i;
+            const bool next_is_0085 = remaining >= 2 && ch == 0xC2U && static_cast<unsigned char>(data[i + 1]) == 0x85U;
+            const bool next_is_202x =
+                remaining >= 3 && ch == 0xE2U && static_cast<unsigned char>(data[i + 1]) == 0x80U &&
+                (static_cast<unsigned char>(data[i + 2]) == 0xA8U || static_cast<unsigned char>(data[i + 2]) == 0xA9U);
+            if (next_is_0085 || next_is_202x) {
+                dest.append(data + run_begin, data + i);
+                if (next_is_0085) {
+                    details::append_raw(dest, "\\u0085", 6);
+                    ++i;
+                } else {
+                    const auto escape = static_cast<unsigned char>(data[i + 2]) == 0xA8U ? "\\u2028" : "\\u2029";
+                    details::append_raw(dest, escape, 6);
+                    i += 2;
+                }
+                run_begin = i + 1;
+                continue;
+            }
+            if (ch != static_cast<unsigned char>('\\') && ch >= 0x20U) {
+                continue;
+            }
+
+            dest.append(data + run_begin, data + i);
+            switch (ch) {
+            case '\\':
+                details::append_raw(dest, "\\\\", 2);
+                break;
+            case '\r':
+                details::append_raw(dest, "\\r", 2);
+                break;
+            case '\n':
+                details::append_raw(dest, "\\n", 2);
+                break;
+            case '\t':
+                details::append_raw(dest, "\\t", 2);
+                break;
+            default:
+                dest.push_back('\\');
+                dest.push_back('x');
+                dest.push_back(hex_digits[(ch >> 4U) & 0x0FU]);
+                dest.push_back(hex_digits[ch & 0x0FU]);
+                break;
+            }
+            run_begin = i + 1;
+        }
+        dest.append(data + run_begin, data + size);
+    }
+
+} // namespace
 
 pattern_formatter::pattern_formatter(std::string pattern) : pattern_(std::move(pattern)) {
     compile_pattern();
@@ -50,6 +115,9 @@ void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& 
     msg.color_range_end = 0;
     if (needs_calendar_) {
         clock_.refresh(msg.time);
+    }
+    if (needs_utc_) {
+        utc_clock_.refresh(msg.time);
     }
     for (const auto& p : pieces_) {
         switch (p.kind) {
@@ -96,6 +164,20 @@ void pattern_formatter::format(const details::log_msg& msg, fmt::memory_buffer& 
         case piece_kind::payload:
             dest.append(msg.payload.data(), msg.payload.data() + msg.payload.size());
             break;
+        case piece_kind::payload_single_line:
+            append_single_line_payload(dest, msg.payload);
+            break;
+        case piece_kind::utc_rfc3339_millis:
+            details::append_raw(dest, utc_clock_.ymd_hms, 19);
+            dest.push_back('.');
+            details::append_padded3(dest, details::millis_of_second(msg.time));
+            dest.push_back('Z');
+            break;
+        case piece_kind::epoch_millis: {
+            const auto millis = std::chrono::floor<std::chrono::milliseconds>(msg.time.time_since_epoch()).count();
+            details::append_int64(dest, static_cast<std::int64_t>(millis));
+            break;
+        }
         case piece_kind::tid:
             details::append_uint64(dest, static_cast<std::uint64_t>(msg.thread_id));
             break;
@@ -173,6 +255,7 @@ void pattern_formatter::set_pattern(std::string pattern) {
     pieces_.clear();
     literals_.clear();
     needs_calendar_ = false;
+    needs_utc_ = false;
     default_layout_ = false;
     compile_pattern();
 }
@@ -182,10 +265,13 @@ void pattern_formatter::compile_pattern() {
     for (size_t i = 0; i < pattern_.size(); ++i) {
         if (pattern_[i] == '%' && i + 1 < pattern_.size()) {
             char flag = pattern_[++i];
-            auto push_flag = [&](piece_kind kind, bool calendar = false) {
+            auto push_flag = [&](piece_kind kind, bool calendar = false, bool utc = false) {
                 push_literal_(raw_str);
                 if (calendar) {
                     needs_calendar_ = true;
+                }
+                if (utc) {
+                    needs_utc_ = true;
                 }
                 pieces_.push_back(piece{kind, 0});
             };
@@ -225,6 +311,15 @@ void pattern_formatter::compile_pattern() {
                 break;
             case 'v':
                 push_flag(piece_kind::payload);
+                break;
+            case 'q':
+                push_flag(piece_kind::payload_single_line);
+                break;
+            case 'u':
+                push_flag(piece_kind::utc_rfc3339_millis, false, true);
+                break;
+            case 'E':
+                push_flag(piece_kind::epoch_millis);
                 break;
             case 't':
                 push_flag(piece_kind::tid);
@@ -269,4 +364,4 @@ void pattern_formatter::compile_pattern() {
     default_layout_ = (pattern_ == default_pattern);
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

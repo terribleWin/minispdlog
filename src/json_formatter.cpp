@@ -189,7 +189,7 @@ namespace {
         return str != nullptr ? string_view_t(str) : string_view_t{};
     }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 json_formatter::field* json_formatter::upsert_(std::string key) {
     for (auto& item : fields_) {
@@ -272,7 +272,7 @@ void json_formatter::format(const details::log_msg& msg, fmt::memory_buffer& des
     dest.push_back('"');
 
     append_key(dest, "ts", first);
-    const auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(msg.time.time_since_epoch()).count();
+    const auto ts = std::chrono::floor<std::chrono::milliseconds>(msg.time.time_since_epoch()).count();
     details::append_int64(dest, static_cast<std::int64_t>(ts));
 
     append_key(dest, "level", first);
@@ -336,4 +336,4 @@ std::unique_ptr<formatter> json_formatter::clone() const {
     return std::make_unique<json_formatter>(*this);
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog
