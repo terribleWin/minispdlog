@@ -1,9 +1,9 @@
 #include "framework/doctest.h"
 #include "minispdlog/details/utils.h"
-#include <thread>
-#include <sstream>
-#include <iomanip>
 #include <cmath>
+#include <iomanip>
+#include <sstream>
+#include <thread>
 
 using namespace minispdlog;
 using namespace minispdlog::details;
@@ -21,15 +21,15 @@ TEST_CASE("format_time default format [utils][time]") {
 TEST_CASE("format_time custom format [utils][time]") {
     auto now = log_clock::now();
     auto str = format_time(now, "%H:%M:%S");
-    // 只输出时分秒，长度 8
+    /// 只输出时分秒，长度 8
     CHECK(str.size() == 8);
     CHECK(str[2] == ':');
     CHECK(str[5] == ':');
 }
 
 TEST_CASE("format_time roundtrip [utils][time]") {
-    // 策略 C：往返校验
-    // 用当前时间 -> format -> 解析回 time_t -> 验证差值 < 1s
+    /// 策略 C：往返校验
+    /// 用当前时间 -> format -> 解析回 time_t -> 验证差值 < 1s
     auto now = log_clock::now();
     auto str = format_time(now, "%Y-%m-%d %H:%M:%S");
 
@@ -41,7 +41,7 @@ TEST_CASE("format_time roundtrip [utils][time]") {
     auto parsed_time_t = std::mktime(&tm_parsed);
     auto original_time_t = log_clock::to_time_t(now);
     auto diff = std::abs(std::difftime(parsed_time_t, original_time_t));
-    CHECK(diff < 1.0);  // 误差 < 1 秒
+    CHECK(diff < 1.0); ///< 误差 < 1 秒
 }
 
 TEST_CASE("get_timestamp_ms is positive and monotonic [utils][time]") {
@@ -52,7 +52,7 @@ TEST_CASE("get_timestamp_ms is positive and monotonic [utils][time]") {
 }
 
 TEST_CASE("get_timestamp_ms magnitude [utils][time]") {
-    // 2024-2033 年合理范围: 1.7e12 ~ 2.0e12
+    /// 2024-2033 年合理范围: 1.7e12 ~ 2.0e12
     auto ts = get_timestamp_ms();
     CHECK(ts > 1'700'000'000'000L);
     CHECK(ts < 2'000'000'000'000L);
@@ -65,9 +65,7 @@ TEST_CASE("get_thread_id is non-zero [utils][thread]") {
 TEST_CASE("get_thread_id differs across threads [utils][thread]") {
     size_t main_id = get_thread_id();
     size_t other_id = 0;
-    std::thread t([&other_id]() {
-        other_id = get_thread_id();
-    });
+    std::thread t([&other_id]() { other_id = get_thread_id(); });
     t.join();
     CHECK(other_id != 0);
     CHECK(other_id != main_id);
@@ -84,7 +82,7 @@ TEST_CASE("ltrim removes leading spaces [utils][string]") {
     std::string s = "  hello";
     auto& ref = ltrim(s);
     CHECK(s == "hello");
-    CHECK(&ref == &s);  // 返回原引用
+    CHECK(&ref == &s); ///< 返回原引用
 }
 
 TEST_CASE("ltrim no leading spaces keeps unchanged [utils][string]") {

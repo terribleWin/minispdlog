@@ -23,11 +23,11 @@ target_include_directories(minispdlog PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# 链接 fmt 库
-target_link_libraries(minispdlog PUBLIC fmt::fmt)
+# fmt 是公开头文件依赖；线程库传递给静态库使用者。
+target_link_libraries(minispdlog PUBLIC fmt::fmt Threads::Threads)
 
 if(UNIX AND NOT APPLE)
-    # Clang does not always pull in libatomic for std::atomic::wait/notify.
+    # Clang 不一定会为 std::atomic::wait/notify 自动链接 libatomic。
     target_link_libraries(minispdlog PUBLIC atomic)
 endif()
 

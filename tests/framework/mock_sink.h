@@ -1,59 +1,52 @@
 #pragma once
 
 #include "minispdlog/sinks/base_sink.h"
-#include <fmt/format.h>  // 显式包含 fmt::memory_buffer
-#include <vector>
-#include <string>
+#include <fmt/format.h>
+
+#include <cstddef>
 #include <mutex>
+#include <string>
+#include <vector>
 
 namespace minispdlog::tests {
 
 /**
- * @brief 内存捕获型 Sink —— 测试专用的测试替身（Test Double）
+ * @brief 在内存中保存已格式化日志的测试 Sink。
  *
- * 解决日志库测试的核心难题：如何自动化断言日志确实被写了？
- *
- * 传统做法（当前项目）：
- *   - 日志写入文件/控制台，测试者用眼睛看输出
- *   - 无法自动化，无法在 CI 中运行
- *
- * 本方案：
- *   - mock_sink 将格式化后的日志内容捕获到内存 vector
- *   - 测试代码直接用 REQUIRE/CHECK 做断言
- *   - 纯内存操作，毫秒级、零副作用、可并行
- *
- * 使用示例：
- *   auto mock = std::make_shared<mock_sink_mt>();
- *   logger lg("test", mock);
- *   lg.info("hello");
- *   REQUIRE(mock->messages().size() == 1);
- *   REQUIRE(mock->last_contains("hello"));
+ * 该测试替身不访问文件或控制台，便于测试代码直接断言文本、
+ * 写入次数与刷新次数。`Mutex` 决定它是否可供多线程共享。
  */
-template<typename Mutex = std::mutex>
+template <typename Mutex = std::mutex>
 class mock_sink : public sinks::base_sink<Mutex> {
 public:
     mock_sink() = default;
 
-    // 获取已捕获的所有日志内容（格式化后的完整字符串）
-    std::vector<std::string> messages() const {
+    /** @brief 返回已捕获文本的快照。 */
+    [[nodiscard]] std::vector<std::string> messages() const {
         std::lock_guard<Mutex> lock(this->mutex_);
         return messages_;
     }
 
-    // 获取已捕获的日志数量
-    size_t message_count() const {
+    /** @brief 返回已捕获的日志数量。 */
+    [[nodiscard]] std::size_t message_count() const {
         std::lock_guard<Mutex> lock(this->mutex_);
         return messages_.size();
     }
 
-    // 清空捕获的内容
+    /** @brief 返回 Sink 收到的刷新次数。 */
+    [[nodiscard]] std::size_t flush_count() const {
+        std::lock_guard<Mutex> lock(this->mutex_);
+        return flush_count_;
+    }
+
+    /** @brief 清空已捕获的日志，但保留刷新计数。 */
     void clear() {
         std::lock_guard<Mutex> lock(this->mutex_);
         messages_.clear();
     }
 
-    // 断言某条日志包含指定子串（搜索所有消息）
-    bool contains(const std::string& substr) const {
+    /** @brief 判断任意一条已捕获日志是否包含子串。 */
+    [[nodiscard]] bool contains(const std::string& substr) const {
         std::lock_guard<Mutex> lock(this->mutex_);
         for (const auto& msg : messages_) {
             if (msg.find(substr) != std::string::npos) {
@@ -63,17 +56,19 @@ public:
         return false;
     }
 
-    // 断言最后一条日志包含指定子串
-    bool last_contains(const std::string& substr) const {
+    /** @brief 判断最后一条日志是否包含子串。 */
+    [[nodiscard]] bool last_contains(const std::string& substr) const {
         std::lock_guard<Mutex> lock(this->mutex_);
-        if (messages_.empty()) return false;
+        if (messages_.empty())
+            return false;
         return messages_.back().find(substr) != std::string::npos;
     }
 
-    // 获取第 idx 条日志内容（越界返回空字符串）
-    std::string at(size_t idx) const {
+    /** @brief 返回指定日志；索引越界时返回空字符串。 */
+    [[nodiscard]] std::string at(std::size_t idx) const {
         std::lock_guard<Mutex> lock(this->mutex_);
-        if (idx >= messages_.size()) return {};
+        if (idx >= messages_.size())
+            return {};
         return messages_[idx];
     }
 
@@ -83,15 +78,14 @@ protected:
         messages_.emplace_back(formatted.data(), formatted.size());
     }
 
-    void flush_() override {
-        // 内存操作无需 flush
-    }
+    void flush_() override { ++flush_count_; }
 
 private:
     std::vector<std::string> messages_;
+    std::size_t flush_count_{0};
 };
 
 using mock_sink_mt = mock_sink<std::mutex>;
 using mock_sink_st = mock_sink<sinks::null_mutex>;
 
-} // namespace minispdlog::tests
+} ///< 结束 minispdlog::tests 命名空间。

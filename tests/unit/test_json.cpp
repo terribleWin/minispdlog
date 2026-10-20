@@ -109,11 +109,9 @@ std::string expected_time_field(log_clock::time_point tp) {
     const auto tm = utc_tm_of(tp);
     const auto duration = tp.time_since_epoch();
     const auto secs = std::chrono::duration_cast<std::chrono::seconds>(duration);
-    const int ms = static_cast<int>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(duration - secs).count());
-    return fmt::format("\"time\":\"{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}.{:03d}Z\"",
-                       tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
-                       tm.tm_sec, ms);
+    const int ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(duration - secs).count());
+    return fmt::format("\"time\":\"{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}.{:03d}Z\"", tm.tm_year + 1900,
+                       tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, ms);
 }
 
 void write_file(const std::filesystem::path& path, std::string_view bytes) {
@@ -197,7 +195,7 @@ void require_file_record_shape(const std::string& line) {
     REQUIRE_FALSE(json_quoted_field(line, "level").empty());
 }
 
-} // namespace
+} ///< 结束匿名命名空间。
 
 TEST_CASE("json_formatter emits JSON Lines with core fields [formatter][json]") {
     details::log_msg msg("app", level::info, "hello");
@@ -274,8 +272,7 @@ TEST_CASE("json_formatter includes source when present [formatter][json]") {
     details::source_loc loc("app.cpp", 42, "main");
     details::log_msg msg(loc, "svc", level::error, "boom");
     const auto line = format_json(msg);
-    REQUIRE(line.find("\"source\":{\"file\":\"app.cpp\",\"line\":42,\"func\":\"main\"}") !=
-            std::string::npos);
+    REQUIRE(line.find("\"source\":{\"file\":\"app.cpp\",\"line\":42,\"func\":\"main\"}") != std::string::npos);
 }
 
 TEST_CASE("json_formatter escapes backslashes in source path [formatter][json]") {
@@ -326,9 +323,8 @@ TEST_CASE("json_formatter can be installed on any sink [sink][json]") {
 
 TEST_CASE("json_formatter on callback_sink [sink][json][callback]") {
     std::vector<std::string> lines;
-    auto sink = std::make_shared<sinks::callback_sink_mt>([&](const std::string& formatted) {
-        lines.push_back(formatted);
-    });
+    auto sink =
+        std::make_shared<sinks::callback_sink_mt>([&](const std::string& formatted) { lines.push_back(formatted); });
     sink->set_formatter(std::make_unique<json_formatter>());
     logger lg("cb-json", sink);
     lg.error("via-callback");
@@ -566,8 +562,7 @@ TEST_CASE("json_formatter wall time is UTC ISO-8601 of log_msg [formatter][json]
 TEST_CASE("json_formatter reuses wall clock within the same second [formatter][json]") {
     const auto tp = log_clock::time_point(std::chrono::seconds(1'700'000'000));
     details::log_msg a(tp, details::source_loc{}, "lg", level::info, "a");
-    details::log_msg b(tp + std::chrono::milliseconds(250), details::source_loc{}, "lg", level::info,
-                       "b");
+    details::log_msg b(tp + std::chrono::milliseconds(250), details::source_loc{}, "lg", level::info, "b");
     json_formatter fmt;
     fmt::memory_buffer first;
     fmt::memory_buffer second;
@@ -838,9 +833,7 @@ TEST_CASE("json_formatter skips reserved and empty resource keys [formatter][jso
     REQUIRE(line.find("\"\":\"empty-key\"") == std::string::npos);
     REQUIRE(json_quoted_field(line, "service") == "checkout");
     std::size_t hits = 0;
-    for (std::size_t pos = 0;
-         (pos = line.find("\"service\":", pos)) != std::string::npos;
-         pos += 10) {
+    for (std::size_t pos = 0; (pos = line.find("\"service\":", pos)) != std::string::npos; pos += 10) {
         ++hits;
     }
     REQUIRE(hits == 1);

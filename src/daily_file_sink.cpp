@@ -40,7 +40,7 @@ namespace sinks {
                                                std::chrono::day{static_cast<unsigned>(date.tm_mday)}};
         }
 
-    } // namespace
+    } ///< 结束匿名命名空间。
 
     template <typename Mutex>
     daily_file_sink<Mutex>::daily_file_sink(std::string base_filename, int rotation_hour, int rotation_minute,
@@ -192,5 +192,5 @@ namespace sinks {
     template class daily_file_sink<std::mutex>;
     template class daily_file_sink<null_mutex>;
 
-} // namespace sinks
-} // namespace minispdlog
+} ///< 结束 sinks 命名空间。
+} ///< 结束 minispdlog 命名空间。

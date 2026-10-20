@@ -1,24 +1,24 @@
 #include "framework/doctest.h"
-#include "minispdlog/minispdlog.h"
-#include "minispdlog/lockfree_queue.h"
 #include "minispdlog/details/circular_q.h"
 #include "minispdlog/details/mpmc_blocking_q.h"
 #include "minispdlog/details/mpsc_queue.h"
-#include "minispdlog/details/spsc_queue.h"
 #include "minispdlog/details/queue_utils.h"
-#include <thread>
-#include <chrono>
+#include "minispdlog/details/spsc_queue.h"
+#include "minispdlog/lockfree_queue.h"
+#include "minispdlog/minispdlog.h"
 #include <atomic>
+#include <chrono>
 #include <set>
+#include <thread>
 #include <vector>
 
 using namespace minispdlog;
 using namespace minispdlog::details;
 
-// ============================================================
-// 测试套件：队列系统 (circular / mpmc / spsc / mpsc lockfree)
-// 标签: [queue]
-// ============================================================
+/**
+ * @file test_queue.cpp
+ * @brief 覆盖循环队列、阻塞 MPMC 队列以及无锁 SPSC/MPSC 队列。
+ */
 
 TEST_CASE("next_power_of_two helper [queue][utils]") {
     REQUIRE(next_power_of_two(0) == 2);
@@ -29,7 +29,7 @@ TEST_CASE("next_power_of_two helper [queue][utils]") {
     REQUIRE(next_power_of_two(8) == 8);
 }
 
-// ---------- circular_q ----------
+/** @brief 循环队列用例。 */
 
 TEST_CASE("circular_q basic operations [queue][circular]") {
     circular_q<int> q(5);
@@ -65,7 +65,7 @@ TEST_CASE("circular_q overwrites oldest when full [queue][circular]") {
     q.push_back(3);
     REQUIRE(q.front() == 1);
 
-    q.push_back(4);  // 覆盖最旧的 (1)
+    q.push_back(4); ///< 覆盖最旧的 (1)
     REQUIRE(q.front() == 2);
     REQUIRE(q.overrun_count() == 1);
 }
@@ -74,9 +74,9 @@ TEST_CASE("circular_q multiple overwrites [queue][circular]") {
     circular_q<int> q(2);
     q.push_back(1);
     q.push_back(2);
-    q.push_back(3);  // 覆盖 1
-    q.push_back(4);  // 覆盖 2
-    q.push_back(5);  // 覆盖 3
+    q.push_back(3); ///< 覆盖 1
+    q.push_back(4); ///< 覆盖 2
+    q.push_back(5); ///< 覆盖 3
 
     REQUIRE(q.front() == 4);
     REQUIRE(q.size() == 2);
@@ -100,7 +100,7 @@ TEST_CASE("circular_q wraps indices without dropping items [queue][circular]") {
     }
 }
 
-// ---------- mpmc_blocking_queue ----------
+/** @brief 阻塞 MPMC 队列用例。 */
 
 TEST_CASE("mpmc_blocking_queue basic enqueue dequeue [queue][mpmc]") {
     mpmc_blocking_queue<int> q(5);
@@ -125,14 +125,20 @@ TEST_CASE("mpmc_blocking_queue dequeue timeout on empty [queue][mpmc]") {
     REQUIRE(elapsed >= std::chrono::milliseconds(40));
 }
 
-TEST_CASE("mpmc_blocking_queue enqueue_nowait does not block [queue][mpmc]") {
+TEST_CASE("mpmc_blocking_queue enqueue_nowait reports overwrite and preserves order [queue][mpmc]") {
     mpmc_blocking_queue<int> q(2);
-    q.enqueue_nowait(1);
-    q.enqueue_nowait(2);
-    // 队列已满，但 nowait 不会阻塞，直接覆盖最旧
-    q.enqueue_nowait(3);
+    REQUIRE_FALSE(q.enqueue_nowait(1));
+    REQUIRE_FALSE(q.enqueue_nowait(2));
+    REQUIRE(q.enqueue_nowait(3));
 
-    REQUIRE(q.size() == 2);  // 容量�?2
+    REQUIRE(q.size() == 2);
+    REQUIRE(q.overrun_count() == 1);
+
+    int value = 0;
+    REQUIRE(q.dequeue_for(value, std::chrono::milliseconds(50)));
+    REQUIRE(value == 2);
+    REQUIRE(q.dequeue_for(value, std::chrono::milliseconds(50)));
+    REQUIRE(value == 3);
 }
 
 TEST_CASE("mpmc_blocking_queue concurrent producer consumer [queue][mpmc][thread]") {
@@ -189,11 +195,12 @@ TEST_CASE("mpmc_blocking_queue multiple producers multiple consumers [queue][mpm
         });
     }
 
-    for (auto& t : threads) t.join();
+    for (auto& t : threads)
+        t.join();
     REQUIRE(total_consumed == producers * items_per_producer);
 }
 
-// ---------- mpsc_queue ----------
+/** @brief 无锁 MPSC 队列用例。 */
 
 TEST_CASE("mpsc_queue basic push pop [queue][mpsc]") {
     mpsc_queue<int> q(5);
@@ -215,7 +222,7 @@ TEST_CASE("mpsc_queue push fails when full [queue][mpsc]") {
     mpsc_queue<int> q(2);
     REQUIRE(q.push(1) == true);
     REQUIRE(q.push(2) == true);
-    REQUIRE(q.push(3) == false);  // 已满，应失败
+    REQUIRE(q.push(3) == false); ///< 已满，应失败
 }
 
 TEST_CASE("mpsc_queue concurrent producers single consumer [queue][mpsc][thread]") {
@@ -248,7 +255,8 @@ TEST_CASE("mpsc_queue concurrent producers single consumer [queue][mpsc][thread]
         }
     });
 
-    for (auto& t : threads) t.join();
+    for (auto& t : threads)
+        t.join();
     consumer.join();
 
     REQUIRE(static_cast<int>(got.size()) == total);
@@ -264,6 +272,29 @@ TEST_CASE("mpsc_queue push failure leaves value intact [queue][mpsc]") {
     int third = 42;
     REQUIRE(q.push(std::move(third)) == false);
     REQUIRE(third == 42);
+}
+
+TEST_CASE("mpsc_queue non-power-of-two capacity wraps without reordering [queue][mpsc]") {
+    constexpr std::size_t capacity = 3;
+    constexpr int rounds = 128;
+    mpsc_queue<int> q(capacity);
+
+    REQUIRE(q.capacity() == capacity);
+    for (int round = 0; round < rounds; ++round) {
+        const int first = round * static_cast<int>(capacity);
+        for (std::size_t offset = 0; offset < capacity; ++offset) {
+            REQUIRE(q.push(first + static_cast<int>(offset)));
+        }
+        REQUIRE_FALSE(q.push(-1));
+        REQUIRE(q.size() == capacity);
+
+        for (std::size_t offset = 0; offset < capacity; ++offset) {
+            int value = -1;
+            REQUIRE(q.pop(value));
+            REQUIRE(value == first + static_cast<int>(offset));
+        }
+        REQUIRE(q.empty());
+    }
 }
 
 TEST_CASE("mpsc_queue concurrent full-queue retries do not drop tickets [queue][mpsc][thread]") {
@@ -310,7 +341,7 @@ TEST_CASE("mpsc_queue concurrent full-queue retries do not drop tickets [queue][
     REQUIRE(static_cast<int>(unique.size()) == total);
 }
 
-// ---------- spsc_queue ----------
+/** @brief 无锁 SPSC 队列用例。 */
 
 TEST_CASE("spsc_queue basic push pop [queue][spsc]") {
     spsc_queue<int> q(4);

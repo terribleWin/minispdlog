@@ -34,7 +34,7 @@ set(UNIT_TEST_SOURCES
 
 # ---- 统一测试入口可执行文件 ----
 # 编译一次，包含所有测试；doctest 提供自动测试发现和命令行过滤
-# 比当前项目"每个文件独立可执行文件"的方式编译速度快 5-10 倍
+# 相比“每个文件独立生成可执行文件”，可避免重复编译并缩短构建时间。
 add_executable(minispdlog_tests
     test_main.cpp
     ${UNIT_TEST_SOURCES}
@@ -50,6 +50,14 @@ target_link_libraries(minispdlog_tests PRIVATE
     Threads::Threads
 )
 
+# Windows 沙箱的系统临时目录可能允许创建文件却拒绝原子重命名。测试目录放在
+# 当前构建树中，既保留真实的轮转语义，也避免依赖宿主临时目录权限。
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tmp")
+file(TO_CMAKE_PATH "${CMAKE_CURRENT_BINARY_DIR}/tmp" MINISPDLOG_TEST_TMP_DIR)
+target_compile_definitions(minispdlog_tests PRIVATE
+    MINISPDLOG_TEST_TMP_DIR="${MINISPDLOG_TEST_TMP_DIR}"
+)
+
 # Qt GUI Sink 测试（offscreen platform，无需显示器）
 if(MINISPDLOG_WITH_QT AND MINISPDLOG_QT_FOUND)
     target_link_libraries(minispdlog_tests PRIVATE ${MINISPDLOG_QT_TARGET})
@@ -59,16 +67,58 @@ if(MINISPDLOG_WITH_QT AND MINISPDLOG_QT_FOUND)
 endif()
 
 # ---- CTest 集成 ----
-# doctest 虽然没有 CMake 模块，但我们可以通过命令行参数实现测试过滤：
-#   ./minispdlog_tests "[sink]"      # 只跑 sink 标签的测试
-#   ./minispdlog_tests -tc="logger"  # 只跑名字包含 logger 的测试
-#   ctest -R minispdlog_tests        # 运行整个测试套件
+# 单个可执行文件只编译一次；CTest 按源文件切分组件条目。
+# 默认 ctest 中每个 TEST_CASE 只执行一次，同时失败报告可直接定位组件。
 enable_testing()
-add_test(NAME minispdlog_tests COMMAND minispdlog_tests)
 
-# 为了更精细的 CTest 集成（每个 TEST_CASE 一个 CTest 项），
-# 可以后续引入 doctest 官方 CMake 模块（doctest.cmake + doctestAddTests.cmake）
-# 下载地址：https://github.com/doctest/doctest/blob/master/scripts/cmake/doctest.cmake
+function(minispdlog_add_component_test component source_file labels)
+    add_test(
+        NAME minispdlog.${component}
+        COMMAND $<TARGET_FILE:minispdlog_tests> "--source-file=*${source_file}"
+    )
+    set_tests_properties(minispdlog.${component} PROPERTIES
+        LABELS "${labels}"
+        TIMEOUT 60
+    )
+endfunction()
+
+minispdlog_add_component_test(level         test_level.cpp         "unit;core")
+minispdlog_add_component_test(sink          test_sink.cpp          "unit;sink")
+minispdlog_add_component_test(logger        test_logger.cpp        "unit;core;concurrency")
+minispdlog_add_component_test(registry      test_registry.cpp      "unit;core;concurrency")
+minispdlog_add_component_test(pattern       test_pattern.cpp       "unit;formatter")
+minispdlog_add_component_test(queue         test_queue.cpp         "unit;queue;concurrency")
+minispdlog_add_component_test(async         test_async.cpp         "unit;async;concurrency")
+minispdlog_add_component_test(utils         test_utils.cpp         "unit;core")
+minispdlog_add_component_test(callback      test_callback_sink.cpp "unit;sink")
+minispdlog_add_component_test(daily_file    test_daily_file.cpp    "unit;sink;filesystem")
+minispdlog_add_component_test(rotating_file test_rotating_file.cpp "unit;sink;filesystem")
+minispdlog_add_component_test(json          test_json.cpp          "unit;formatter;sink;filesystem")
+minispdlog_add_component_test(buffered_file test_buffered_file.cpp "unit;sink;filesystem")
+minispdlog_add_component_test(network       test_network.cpp       "unit;sink;network")
+minispdlog_add_component_test(qt_sink       test_qt_sink.cpp       "unit;sink;optional")
+
+# 需要与本地 doctest 命令行完全一致时，可直接运行下列目标。
+add_custom_target(minispdlog_check
+    COMMAND $<TARGET_FILE:minispdlog_tests>
+    DEPENDS minispdlog_tests
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    USES_TERMINAL
+)
+
+# ---- 无外部依赖的性能烟雾测量 ----
+# 只输出固定消息数下的耗时与吞吐量，不设置会受机器负载影响的硬阈值。
+option(MINISPDLOG_BUILD_PERF_SMOKE "构建无外部依赖的性能烟雾测量" OFF)
+if(MINISPDLOG_BUILD_PERF_SMOKE)
+    add_executable(minispdlog_perf_smoke performance_smoke.cpp)
+    target_include_directories(minispdlog_perf_smoke PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_link_libraries(minispdlog_perf_smoke PRIVATE minispdlog Threads::Threads)
+    add_test(NAME minispdlog.performance_smoke COMMAND $<TARGET_FILE:minispdlog_perf_smoke>)
+    set_tests_properties(minispdlog.performance_smoke PROPERTIES
+        LABELS "performance;smoke"
+        TIMEOUT 120
+    )
+endif()
 
 # ============================================================
 # 可选：Google Benchmark 性能测试（保留已有测试）
@@ -127,9 +177,9 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # ============================================================
-# 旧测试文件清理清单（已废弃，保留参考）
+# 旧测试文件保留清单（历史 API 与对比基准，不纳入统一测试目标）
 # ============================================================
-# 以下文件已被新框架的 unit/*.cpp 替代，可以安全删除：
+# 以下文件由 unit/*.cpp 中的稳定用例接替，但仍保留在仓库中：
 #   test_level.cpp        -> unit/test_level.cpp
 #   test_sink.cpp         -> unit/test_sink.cpp
 #   test_formatter.cpp    -> 待合并到 unit/test_pattern.cpp

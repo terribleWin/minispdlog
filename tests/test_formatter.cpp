@@ -10,7 +10,7 @@ using namespace minispdlog;
 void test_pattern_compilation() {
     std::cout << "\n========== 测试1:Pattern 编译 ==========\n";
 
-    // 创建自定义 pattern
+    /// 创建自定义 pattern
     std::string patterns[] = {"[%Y-%m-%d %H:%M:%S] [%l] %v", "%H:%M:%S.%L - %v", "[%L] [%n] [thread %t] %v",
                               "%Y年%m月%d日 %H时%M分%S秒 %v"};
 
@@ -44,7 +44,7 @@ void test_level_formatting() {
 
     auto sink = std::make_shared<sinks::console_sink_mt>();
 
-    // 设置自定义 pattern
+    /// 设置自定义 pattern
     sink->set_formatter(std::make_unique<pattern_formatter>("[%Y-%m-%d %H:%M:%S] [%L] %v"));
 
     level levels[] = {level::trace, level::debug, level::info, level::warn, level::error, level::critical};
@@ -61,7 +61,7 @@ void test_time_caching() {
 
     pattern_formatter formatter("[%Y-%m-%d %H:%M:%S] [%l] %v");
 
-    // 在同一秒内记录多条日志,应该复用缓存的时间
+    /// 在同一秒内记录多条日志,应该复用缓存的时间
     auto start = std::chrono::high_resolution_clock::now();
 
     const int iterations = 10000;
@@ -125,7 +125,7 @@ void test_formatter_in_sink() {
     auto sink1 = std::make_shared<sinks::console_sink_mt>();
     auto sink2 = std::make_shared<sinks::console_sink_mt>();
 
-    // 为不同 sink 设置不同格式
+    /// 为不同 sink 设置不同格式
     sink1->set_formatter(std::make_unique<pattern_formatter>("[简洁] [%H:%M:%S] %v"));
 
     sink2->set_formatter(std::make_unique<pattern_formatter>("[详细] [%Y-%m-%d %H:%M:%S] [%L] [%n] %v"));
@@ -145,17 +145,17 @@ void test_pattern_change() {
     auto sink = std::make_shared<sinks::console_sink_mt>();
     details::log_msg msg("DynamicTest", level::info, "Same message");
 
-    // 第一次输出
+    /// 第一次输出
     std::cout << "Pattern 1: [默认]\n";
     sink->log(msg);
 
-    // 修改 pattern
+    /// 修改 pattern
     sink->set_formatter(std::make_unique<pattern_formatter>("[%H:%M:%S] >>> %v <<<"));
 
     std::cout << "\nPattern 2: [%H:%M:%S] >>> %v <<<\n";
     sink->log(msg);
 
-    // 再次修改
+    /// 再次修改
     sink->set_formatter(std::make_unique<pattern_formatter>("%Y/%m/%d | %v"));
 
     std::cout << "\nPattern 3: %Y/%m/%d | %v\n";
@@ -186,7 +186,7 @@ void test_thread_id() {
 void test_unknown_flags() {
     std::cout << "\n========== 测试10:未知占位符处理 ==========\n";
 
-    pattern_formatter formatter("[%Y-%m-%d] [%Z] %v"); // %Z 是未知占位符
+    pattern_formatter formatter("[%Y-%m-%d] [%Z] %v"); ///< %Z 是未知占位符
     details::log_msg msg("TestLogger", level::info, "Test unknown flags");
     fmt::memory_buffer buf;
     formatter.format(msg, buf);

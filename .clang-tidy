@@ -32,7 +32,7 @@ CheckOptions:
   - key:   readability-identifier-naming.ConstexprVariableCase
     value: UPPER_CASE
 
-# Only diagnose first-party headers (Windows and POSIX separators).
+# 只诊断项目自有头文件，同时兼容 Windows 与 POSIX 路径分隔符。
 HeaderFilterRegex: 'include[/\\]minispdlog[/\\]'
 WarningsAsErrors: ''
 FormatStyle: file

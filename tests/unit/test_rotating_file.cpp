@@ -46,7 +46,7 @@ void write_n(sinks::rotating_file_sink_mt& sink, int n, const std::string& paylo
     sink.flush();
 }
 
-} // namespace
+} ///< 结束匿名命名空间。
 
 TEST_CASE("rotating calc_filename inserts index before extension [sink][rotating]") {
     REQUIRE(sinks::rotating_file_sink_mt::calc_filename("logs/mylog.txt", 0) == "logs/mylog.txt");

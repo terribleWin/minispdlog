@@ -8,7 +8,7 @@ using namespace minispdlog;
 void test_level_conversion() {
     std::cout << "\n========== 测试1:日志级别转换 ==========\n";
 
-    // 测试所有级别
+    /// 测试所有级别
     level levels[] = {level::trace, level::debug, level::info, level::warn, level::error, level::critical, level::off};
 
     for (auto lvl : levels) {
@@ -46,7 +46,7 @@ void test_should_log() {
 void test_time_utils() {
     std::cout << "\n========== 测试4:时间工具函数 ==========\n";
 
-    // 直接使用 log_clock
+    /// 直接使用 log_clock
     auto now = minispdlog::log_clock::now();
 
     std::cout << "当前时间(默认格式): " << details::format_time(now) << "\n";

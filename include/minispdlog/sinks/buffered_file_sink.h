@@ -12,97 +12,83 @@
 namespace minispdlog {
 namespace sinks {
 
-/// File sink with a front/frozen double buffer, batched fwrite, WAL, and tail salvage.
-/// `_mt` releases the sink mutex while the frozen buffer is written so producers can
-/// keep filling the new front. `set_pattern` / `set_formatter` work as on `file_sink`.
-template <typename Mutex>
-class buffered_file_sink : public base_sink<Mutex> {
-public:
-    explicit buffered_file_sink(const std::string& filename, bool truncate = false,
-                                batch_config cfg = {})
-        : writer_(filename, truncate, cfg) {}
+    /**
+ * @brief 支持双缓冲批量写、WAL 与断尾修复的文件 Sink。
+ * @tparam Mutex `std::mutex` 为多线程版本，`null_mutex` 为单线程版本。
+ *
+ * `_mt` 版本写冻结缓冲区时释放 Sink 锁，使其他生产者可以继续填充新的前台
+ * 缓冲区。格式化器接口与普通 `file_sink` 一致。
+ */
+    template <typename Mutex>
+    class buffered_file_sink : public base_sink<Mutex> {
+    public:
+        /**
+     * @brief 打开批量日志文件。
+     * @param filename 目标路径。
+     * @param truncate 是否丢弃已有内容。
+     * @param cfg 批次与恢复配置。
+     */
+        explicit buffered_file_sink(const std::string& filename, bool truncate = false, batch_config cfg = {})
+            : writer_(filename, truncate, cfg) {}
 
-    ~buffered_file_sink() override {
-        try {
-            flush();
-        } catch (...) {
-        }
-    }
-
-    buffered_file_sink(const buffered_file_sink&) = delete;
-    buffered_file_sink& operator=(const buffered_file_sink&) = delete;
-
-    const std::string& filename() const { return writer_.path(); }
-
-    std::size_t queued_bytes() const {
-        std::lock_guard<Mutex> lock(this->mutex_);
-        return writer_.front_size();
-    }
-
-    void log(const details::log_msg& msg) override {
-        if constexpr (std::is_same_v<Mutex, std::mutex>) {
-            std::unique_lock<std::mutex> lock(this->mutex_);
-            auto& formatted = this->format_message(msg);
-            writer_.append(formatted.data(), formatted.size());
-            drain_commits_(lock);
-        } else {
-            std::lock_guard<Mutex> lock(this->mutex_);
-            auto& formatted = this->format_message(msg);
-            writer_.append(formatted.data(), formatted.size());
-            writer_.commit_if_needed();
-        }
-    }
-
-    void flush() override {
-        if constexpr (std::is_same_v<Mutex, std::mutex>) {
-            std::unique_lock<std::mutex> lock(this->mutex_);
-            wait_idle_(lock);
-            drain_front_(lock);
-        } else {
-            std::lock_guard<Mutex> lock(this->mutex_);
-            writer_.flush();
-        }
-    }
-
-protected:
-    void sink_it_(const details::log_msg&) override {}
-    void flush_() override {}
-
-private:
-    void wait_idle_(std::unique_lock<std::mutex>& lock) {
-        cv_.wait(lock, [this] { return !writer_.committing(); });
-    }
-
-    void drain_front_(std::unique_lock<std::mutex>& lock) {
-        const char* data = nullptr;
-        std::size_t size = 0;
-        if (!writer_.begin_commit(data, size)) {
-            writer_.flush();
-            return;
-        }
-        lock.unlock();
-        try {
-            writer_.write_commit(data, size);
-        } catch (...) {
-            lock.lock();
-            writer_.end_commit();
-            cv_.notify_all();
-            throw;
-        }
-        lock.lock();
-        writer_.end_commit();
-        cv_.notify_all();
-    }
-
-    void drain_commits_(std::unique_lock<std::mutex>& lock) {
-        for (;;) {
-            wait_idle_(lock);
-            if (!writer_.should_commit()) {
-                return;
+        ~buffered_file_sink() override {
+            try {
+                flush();
+            } catch (...) {
             }
+        }
+
+        buffered_file_sink(const buffered_file_sink&) = delete;
+        buffered_file_sink& operator=(const buffered_file_sink&) = delete;
+
+        /** @brief 返回目标文件路径。 */
+        const std::string& filename() const { return writer_.path(); }
+
+        /** @brief 返回尚未进入冻结批次的字节数。 */
+        std::size_t queued_bytes() const {
+            std::lock_guard<Mutex> lock(this->mutex_);
+            return writer_.front_size();
+        }
+
+        void log(const details::log_msg& msg) override {
+            if constexpr (std::is_same_v<Mutex, std::mutex>) {
+                std::unique_lock<std::mutex> lock(this->mutex_);
+                auto& formatted = this->format_message(msg);
+                writer_.append(formatted.data(), formatted.size());
+                drain_commits_(lock);
+            } else {
+                std::lock_guard<Mutex> lock(this->mutex_);
+                auto& formatted = this->format_message(msg);
+                writer_.append(formatted.data(), formatted.size());
+                writer_.commit_if_needed();
+            }
+        }
+
+        void flush() override {
+            if constexpr (std::is_same_v<Mutex, std::mutex>) {
+                std::unique_lock<std::mutex> lock(this->mutex_);
+                wait_idle_(lock);
+                drain_front_(lock);
+            } else {
+                std::lock_guard<Mutex> lock(this->mutex_);
+                writer_.flush();
+            }
+        }
+
+    protected:
+        void sink_it_(const details::log_msg&) override {}
+        void flush_() override {}
+
+    private:
+        void wait_idle_(std::unique_lock<std::mutex>& lock) {
+            cv_.wait(lock, [this] { return !writer_.committing(); });
+        }
+
+        void drain_front_(std::unique_lock<std::mutex>& lock) {
             const char* data = nullptr;
             std::size_t size = 0;
             if (!writer_.begin_commit(data, size)) {
+                writer_.flush();
                 return;
             }
             lock.unlock();
@@ -118,14 +104,39 @@ private:
             writer_.end_commit();
             cv_.notify_all();
         }
-    }
 
-    details::durable_file writer_;
-    std::condition_variable cv_{};
-};
+        void drain_commits_(std::unique_lock<std::mutex>& lock) {
+            for (;;) {
+                wait_idle_(lock);
+                if (!writer_.should_commit()) {
+                    return;
+                }
+                const char* data = nullptr;
+                std::size_t size = 0;
+                if (!writer_.begin_commit(data, size)) {
+                    return;
+                }
+                lock.unlock();
+                try {
+                    writer_.write_commit(data, size);
+                } catch (...) {
+                    lock.lock();
+                    writer_.end_commit();
+                    cv_.notify_all();
+                    throw;
+                }
+                lock.lock();
+                writer_.end_commit();
+                cv_.notify_all();
+            }
+        }
 
-using buffered_file_sink_mt = buffered_file_sink<std::mutex>;
-using buffered_file_sink_st = buffered_file_sink<null_mutex>;
+        details::durable_file writer_;
+        std::condition_variable cv_{};
+    };
 
-} // namespace sinks
-} // namespace minispdlog
+    using buffered_file_sink_mt = buffered_file_sink<std::mutex>;
+    using buffered_file_sink_st = buffered_file_sink<null_mutex>;
+
+} ///< 结束 sinks 命名空间。
+} ///< 结束 minispdlog 命名空间。

@@ -12,8 +12,7 @@ int main() {
     try {
         minispdlog::network_listener udp(minispdlog::network_protocol::udp);
         const auto udp_ep = udp.local();
-        auto udp_sink =
-            std::make_shared<minispdlog::sinks::udp_sink_mt>(udp_ep.host, udp_ep.port);
+        auto udp_sink = std::make_shared<minispdlog::sinks::udp_sink_mt>(udp_ep.host, udp_ep.port);
         udp_sink->set_pattern("%v");
         auto udp_log = std::make_shared<minispdlog::logger>("udp", udp_sink);
         minispdlog::register_logger(udp_log);
@@ -31,8 +30,7 @@ int main() {
         const auto tcp_ep = tcp.local();
         minispdlog::json_formatter fields;
         fields.add("service", "network-demo").add("env", "dev");
-        auto json_log =
-            minispdlog::json_tcp_logger_mt("json-tcp", tcp_ep.host, tcp_ep.port, std::move(fields));
+        auto json_log = minispdlog::json_tcp_logger_mt("json-tcp", tcp_ep.host, tcp_ep.port, std::move(fields));
         json_log->info("hello {}", "tcp");
         json_log->flush();
         const auto json_line = tcp.recv();
@@ -40,9 +38,8 @@ int main() {
 
         minispdlog::drop("udp");
         minispdlog::drop("json-tcp");
-        std::cout << "Network sink demo used kernel UDP+TCP loopback "
-                  << udp_ep.host << ':' << udp_ep.port << " and " << tcp_ep.host << ':'
-                  << tcp_ep.port << '\n';
+        std::cout << "Network sink demo used kernel UDP+TCP loopback " << udp_ep.host << ':' << udp_ep.port << " and "
+                  << tcp_ep.host << ':' << tcp_ep.port << '\n';
         return 0;
     } catch (const std::exception& error) {
         minispdlog::drop("udp");

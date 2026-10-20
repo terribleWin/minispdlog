@@ -1,4 +1,4 @@
-// Format vs I/O vs enqueue. Console/file "off" is not a formatter bench.
+/// 对比分格式化、I/O 与入队成本；关闭控制台或文件输出不等同于格式器基准。
 #include "minispdlog/details/thread_pool.h"
 #include "minispdlog/json_formatter.h"
 #include "minispdlog/logger.h"
@@ -23,12 +23,11 @@ constexpr const char* kDevNull = "/dev/null";
 
 details::thread_pool g_pool(8192, 2);
 
-// Formats on the caller (logger::info) then posts onto g_pool — the real async path.
+/// 在调用线程执行 logger::info 格式化，再投递到 g_pool，覆盖真实异步路径。
 class enqueue_logger : public logger {
 public:
     enqueue_logger(std::string name, sinks::sink_ptr sink, details::thread_pool& pool)
-        : logger(std::move(name), std::move(sink))
-        , pool_(&pool) {}
+        : logger(std::move(name), std::move(sink)), pool_(&pool) {}
 
     void sink_it_(const details::log_msg& msg) override { pool_->post_log(this, msg); }
 
@@ -38,7 +37,7 @@ private:
     details::thread_pool* pool_;
 };
 
-} // namespace
+} ///< 结束匿名命名空间。
 
 static void BM_LoggerDisabled(benchmark::State& state) {
     auto sink = std::make_shared<sinks::null_sink_mt>();

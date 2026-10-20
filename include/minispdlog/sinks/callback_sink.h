@@ -10,78 +10,75 @@
 namespace minispdlog {
 namespace sinks {
 
-/**
- * Callback sink — custom output without writing a new sink class.
+    /**
+ * @brief 通过业务回调消费日志，无需编写新的 Sink 子类。
  *
- * Two log hooks (construct with either):
- *   formatted: void(const std::string& line)
- *   record:    void(const log_msg& msg, const std::string& line)
- * Optional flush hook: void().
+ * 可选择只接收拥有内存的格式化字符串，或同时接收 `log_msg` 记录视图；还可提供
+ * 可选的刷新回调。格式化字符串可以安全保存，而 `log_msg::payload` 与
+ * `logger_name` 只在回调执行期间有效，需要跨调用保存时必须复制。
  *
- * The formatted line is an owning string (safe to store). log_msg::payload /
- * logger_name are views valid only during the callback — copy them if you keep
- * the record.
- *
- * Invoked under the sink mutex. Do not log or flush the same sink from a
- * callback (deadlock on _mt). qt_sink is the GUI specialization; use this
- * sink for metrics, alerts, tests, or shipping without Qt.
+ * @warning 回调在 Sink 锁内执行；回调中不得再次记录或刷新同一 Sink，否则 `_mt`
+ * 版本会死锁。GUI 场景优先使用 `qt_sink`。
  */
-template <typename Mutex>
-class callback_sink : public base_sink<Mutex> {
-public:
-    using formatted_callback_t = std::function<void(const std::string& formatted)>;
-    using record_callback_t =
-        std::function<void(const details::log_msg& msg, const std::string& formatted)>;
-    using flush_callback_t = std::function<void()>;
-    using callback_t = formatted_callback_t;
+    template <typename Mutex>
+    class callback_sink : public base_sink<Mutex> {
+    public:
+        /** @brief 只接收格式化文本的回调类型。 */
+        using formatted_callback_t = std::function<void(const std::string& formatted)>;
+        /** @brief 同时接收记录视图与格式化文本的回调类型。 */
+        using record_callback_t = std::function<void(const details::log_msg& msg, const std::string& formatted)>;
+        /** @brief 刷新事件回调类型。 */
+        using flush_callback_t = std::function<void()>;
+        /** @brief 向后兼容的格式化回调别名。 */
+        using callback_t = formatted_callback_t;
 
-    explicit callback_sink(formatted_callback_t on_log, flush_callback_t on_flush = {})
-        : callback_sink(wrap_formatted(std::move(on_log)), std::move(on_flush), 0) {}
+        /** @brief 使用格式化文本回调构造 Sink。 */
+        explicit callback_sink(formatted_callback_t on_log, flush_callback_t on_flush = {})
+            : callback_sink(wrap_formatted(std::move(on_log)), std::move(on_flush), 0) {}
 
-    explicit callback_sink(record_callback_t on_log, flush_callback_t on_flush = {})
-        : callback_sink(std::move(on_log), std::move(on_flush), 0) {}
+        /** @brief 使用记录回调构造 Sink。 */
+        explicit callback_sink(record_callback_t on_log, flush_callback_t on_flush = {})
+            : callback_sink(std::move(on_log), std::move(on_flush), 0) {}
 
-    void set_flush_callback(flush_callback_t on_flush) {
-        std::lock_guard<Mutex> lock(this->mutex_);
-        flush_callback_ = std::move(on_flush);
-    }
-
-protected:
-    void sink_it_(const details::log_msg& msg) override {
-        auto& formatted = this->format_message(msg);
-        callback_(msg, std::string(formatted.data(), formatted.size()));
-    }
-
-    void flush_() override {
-        if (flush_callback_) {
-            flush_callback_();
+        /** @brief 在线程安全保护下替换刷新回调。 */
+        void set_flush_callback(flush_callback_t on_flush) {
+            std::lock_guard<Mutex> lock(this->mutex_);
+            flush_callback_ = std::move(on_flush);
         }
-    }
 
-private:
-    static record_callback_t wrap_formatted(formatted_callback_t on_log) {
-        if (!on_log) {
-            throw std::invalid_argument("callback_sink: callback must not be empty");
+    protected:
+        void sink_it_(const details::log_msg& msg) override {
+            auto& formatted = this->format_message(msg);
+            callback_(msg, std::string(formatted.data(), formatted.size()));
         }
-        return [cb = std::move(on_log)](const details::log_msg&, const std::string& formatted) {
-            cb(formatted);
-        };
-    }
 
-    callback_sink(record_callback_t on_log, flush_callback_t on_flush, int)
-        : callback_(std::move(on_log))
-        , flush_callback_(std::move(on_flush)) {
-        if (!callback_) {
-            throw std::invalid_argument("callback_sink: callback must not be empty");
+        void flush_() override {
+            if (flush_callback_) {
+                flush_callback_();
+            }
         }
-    }
 
-    record_callback_t callback_;
-    flush_callback_t flush_callback_;
-};
+    private:
+        static record_callback_t wrap_formatted(formatted_callback_t on_log) {
+            if (!on_log) {
+                throw std::invalid_argument("callback_sink: callback must not be empty");
+            }
+            return [cb = std::move(on_log)](const details::log_msg&, const std::string& formatted) { cb(formatted); };
+        }
 
-using callback_sink_mt = callback_sink<std::mutex>;
-using callback_sink_st = callback_sink<null_mutex>;
+        callback_sink(record_callback_t on_log, flush_callback_t on_flush, int)
+            : callback_(std::move(on_log)), flush_callback_(std::move(on_flush)) {
+            if (!callback_) {
+                throw std::invalid_argument("callback_sink: callback must not be empty");
+            }
+        }
 
-} // namespace sinks
-} // namespace minispdlog
+        record_callback_t callback_;
+        flush_callback_t flush_callback_;
+    };
+
+    using callback_sink_mt = callback_sink<std::mutex>;
+    using callback_sink_st = callback_sink<null_mutex>;
+
+} ///< 结束 sinks 命名空间。
+} ///< 结束 minispdlog 命名空间。

@@ -1,25 +1,36 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.20)
 project(minispdlog VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)   # ← 改这里：加上 _REQUIRED
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# 顶层开发默认构建测试与示例；作为子项目引入时只构建日志库本身。
+if(PROJECT_IS_TOP_LEVEL)
+    set(MINISPDLOG_DEVELOPER_DEFAULT ON)
+else()
+    set(MINISPDLOG_DEVELOPER_DEFAULT OFF)
+endif()
+option(MINISPDLOG_BUILD_TESTS "构建 minispdlog 测试" ${MINISPDLOG_DEVELOPER_DEFAULT})
+option(MINISPDLOG_BUILD_EXAMPLES "构建 minispdlog 示例" ${MINISPDLOG_DEVELOPER_DEFAULT})
+
+find_package(Threads REQUIRED)
 
 if(MSVC)
     add_compile_options(/W4 /utf-8)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic)   # ← 顺便修了：Wpendatic → Wpedantic
+    add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
 # ============================================================
-# 构建变体（继承 CS144 Sponge 设计）
+# 构建变体（面向开发、发布与运行时检测）
 # ============================================================
 # Debug:     调试符号 + 低优化
 # Release:   全优化（默认）
-# RelASan:   release + AddressSanitizer + UBSan
-# RelTSan:   release + ThreadSanitizer
-# DebugASan: debug + AddressSanitizer + UBSan
-# DebugTSan: debug + ThreadSanitizer
+# RelASan:   发布优化 + AddressSanitizer + UBSan
+# RelTSan:   发布优化 + ThreadSanitizer
+# DebugASan: 调试构建 + AddressSanitizer + UBSan
+# DebugTSan: 调试构建 + ThreadSanitizer
 # ============================================================
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelASan;RelTSan;DebugASan;DebugTSan")
@@ -57,25 +68,31 @@ endif()
 #   cmake --build build --target format-check  # CI：有差异即失败
 #   cmake -DCLANG_TIDY=clang-tidy ..           # 编译时跑 tidy
 # ============================================================
-# Allowlist matches scripts/lint.sh (files kept clean against .clang-format).
-set(MINISPDLOG_FORMAT_FILES
-    "${CMAKE_SOURCE_DIR}/include/minispdlog/sinks/daily_file_sink.h"
-    "${CMAKE_SOURCE_DIR}/src/daily_file_sink.cpp"
-    "${CMAKE_SOURCE_DIR}/tests/unit/test_daily_file.cpp"
+# 只收集项目自有源码，避免重排 `third_party` 中的外部代码。
+file(GLOB_RECURSE MINISPDLOG_FORMAT_FILES CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/include/minispdlog/*.h"
+    "${PROJECT_SOURCE_DIR}/include/minispdlog/*.hpp"
+    "${PROJECT_SOURCE_DIR}/src/*.cpp"
+    "${PROJECT_SOURCE_DIR}/src/*.hpp"
+    "${PROJECT_SOURCE_DIR}/tests/*.h"
+    "${PROJECT_SOURCE_DIR}/tests/*.hpp"
+    "${PROJECT_SOURCE_DIR}/tests/*.cpp"
+    "${PROJECT_SOURCE_DIR}/examples/*.cpp"
 )
+list(REMOVE_ITEM MINISPDLOG_FORMAT_FILES "${PROJECT_SOURCE_DIR}/tests/framework/doctest.h")
 
 find_program(CLANG_FORMAT_EXE NAMES clang-format clang-format-18 clang-format-16 clang-format-14)
 if(CLANG_FORMAT_EXE)
     add_custom_target(format
         COMMAND ${CLANG_FORMAT_EXE} -i --style=file
                 ${MINISPDLOG_FORMAT_FILES}
-        COMMENT "clang-format using ${CMAKE_SOURCE_DIR}/.clang-format"
+        COMMENT "clang-format: format project-owned C/C++ sources"
         VERBATIM
     )
     add_custom_target(format-check
         COMMAND ${CLANG_FORMAT_EXE} --dry-run --Werror --style=file
                 ${MINISPDLOG_FORMAT_FILES}
-        COMMENT "clang-format --dry-run using ${CMAKE_SOURCE_DIR}/.clang-format"
+        COMMENT "clang-format: check project-owned C/C++ sources"
         VERBATIM
     )
 endif()
@@ -94,7 +111,7 @@ endif()
 # 可选 Qt GUI Sink（SDK 建议装到 third_party/qt，见 scripts/setup_qt.sh）
 #   cmake -DMINISPDLOG_WITH_QT=ON ..
 # ============================================================
-option(MINISPDLOG_WITH_QT "Build Qt GUI sink, tests and example" OFF)
+option(MINISPDLOG_WITH_QT "构建 Qt GUI Sink、测试与示例" OFF)
 set(MINISPDLOG_QT_FOUND FALSE)
 if(MINISPDLOG_WITH_QT)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MinispdlogQt.cmake")
@@ -112,20 +129,25 @@ endif()
 
 add_subdirectory(third_party/fmt)
 add_subdirectory(src)
-enable_testing()
-add_subdirectory(tests)
-add_subdirectory(examples/rotating_log)
-add_subdirectory(examples/json_log)
-add_subdirectory(examples/callback_log)
-add_subdirectory(examples/buffered_log)
-add_subdirectory(examples/color_log)
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_subdirectory(examples/network_log)
+if(MINISPDLOG_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
 
-if(MINISPDLOG_WITH_QT AND MINISPDLOG_QT_FOUND)
-    add_subdirectory(examples/qt_log_viewer)
+if(MINISPDLOG_BUILD_EXAMPLES)
+    add_subdirectory(examples/rotating_log)
+    add_subdirectory(examples/json_log)
+    add_subdirectory(examples/callback_log)
+    add_subdirectory(examples/buffered_log)
+    add_subdirectory(examples/color_log)
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_subdirectory(examples/network_log)
+    endif()
+
+    if(MINISPDLOG_WITH_QT AND MINISPDLOG_QT_FOUND)
+        add_subdirectory(examples/qt_log_viewer)
+    endif()
 endif()
 
 # ========== 安装规则 ==========

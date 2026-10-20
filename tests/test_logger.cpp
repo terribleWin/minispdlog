@@ -60,16 +60,16 @@ void test_level_filtering() {
 void test_multi_sink() {
     std::cout << "\n========== 测试4:多 Sink 输出 ==========\n";
 
-    // 创建多个 sink
+    /// 创建多个 sink
     auto console_sink = std::make_shared<sinks::console_sink_mt>();
     auto file_sink = std::make_shared<sinks::file_sink_mt>("logs/multi_sink.log", true);
 
-    // 为不同 sink 设置不同格式
+    /// 为不同 sink 设置不同格式
     console_sink->set_formatter(std::make_unique<pattern_formatter>("[控制台] [%H:%M:%S] [%l] %v"));
 
     file_sink->set_formatter(std::make_unique<pattern_formatter>("[文件] [%Y-%m-%d %H:%M:%S] [%L] [%n] %v"));
 
-    // 创建 logger 并添加多个 sink
+    /// 创建 logger 并添加多个 sink
     logger my_logger("MultiSinkLogger");
     my_logger.add_sink(console_sink);
     my_logger.add_sink(file_sink);
@@ -84,7 +84,7 @@ void test_multi_sink() {
 void test_file_logging() {
     std::cout << "\n========== 测试5:文件日志 ==========\n";
 
-    // 创建文件 sink
+    /// 创建文件 sink
     auto file_sink = std::make_shared<sinks::file_sink_mt>("logs/test.log", true);
     logger file_logger("FileLogger", file_sink);
 
@@ -94,7 +94,7 @@ void test_file_logging() {
 
     std::cout << "日志已写入 logs/test.log\n";
 
-    // 测试 append 模式
+    /// 测试 append 模式
     auto append_sink = std::make_shared<sinks::file_sink_mt>("logs/append.log", false);
     logger append_logger("AppendLogger", append_sink);
 
@@ -125,10 +125,10 @@ void test_sink_level() {
     auto console_sink = std::make_shared<sinks::console_sink_mt>();
     auto file_sink = std::make_shared<sinks::file_sink_mt>("logs/errors_only.log", true);
 
-    // 控制台显示所有级别
+    /// 控制台显示所有级别
     console_sink->set_level(level::trace);
 
-    // 文件只记录 error 及以上
+    /// 文件只记录 error 及以上
     file_sink->set_level(level::error);
 
     logger my_logger("SinkLevelLogger");
@@ -177,7 +177,7 @@ void test_auto_flush() {
     auto file_sink = std::make_shared<sinks::file_sink_mt>("logs/auto_flush.log", true);
     logger my_logger("AutoFlushLogger", file_sink);
 
-    // 设置在 error 级别自动刷新
+    /// 设置在 error 级别自动刷新
     my_logger.flush_on(level::error);
 
     my_logger.info("Info message (不会立即刷新)");
@@ -191,7 +191,7 @@ void test_performance() {
     std::cout << "\n========== 测试11:性能测试 ==========\n";
 
     auto console_sink = std::make_shared<sinks::console_sink_mt>();
-    console_sink->set_level(level::off); // 关闭输出,只测试开销
+    console_sink->set_level(level::off); ///< 关闭输出,只测试开销
 
     logger my_logger("PerfLogger", console_sink);
 
@@ -238,20 +238,20 @@ void test_multithread() {
 void test_real_world_example() {
     std::cout << "\n========== 测试13:真实场景示例 ==========\n";
 
-    // 创建一个典型的日志配置
+    /// 创建一个典型的日志配置
     auto console_sink = std::make_shared<sinks::color_console_sink_mt>();
     auto file_sink = std::make_shared<sinks::file_sink_mt>("logs/application.log", false);
     auto error_sink = std::make_shared<sinks::file_sink_mt>("logs/errors.log", false);
 
-    // 控制台:info 及以上
+    /// 控制台:info 及以上
     console_sink->set_level(level::info);
     console_sink->set_formatter(std::make_unique<pattern_formatter>("[%H:%M:%S] [%l] %v"));
 
-    // 普通日志文件:debug 及以上
+    /// 普通日志文件:debug 及以上
     file_sink->set_level(level::debug);
     file_sink->set_formatter(std::make_unique<pattern_formatter>("[%Y-%m-%d %H:%M:%S] [%L] [%n] %v"));
 
-    // 错误日志文件:error 及以上
+    /// 错误日志文件:error 及以上
     error_sink->set_level(level::error);
     error_sink->set_formatter(std::make_unique<pattern_formatter>("[%Y-%m-%d %H:%M:%S] [%L] [%n] [thread %t] %v"));
 
@@ -260,7 +260,7 @@ void test_real_world_example() {
     app_logger.add_sink(file_sink);
     app_logger.add_sink(error_sink);
 
-    // 模拟应用程序日志
+    /// 模拟应用程序日志
     app_logger.info("Application started");
     app_logger.debug("Loading configuration...");
     app_logger.debug("Configuration loaded successfully");
@@ -280,7 +280,7 @@ int main() {
     std::cout << "║  MiniSpdlog 第4天测试 - Logger系统      ║\n";
     std::cout << "╚════════════════════════════════════════╝\n";
 
-    // 创建日志目录
+    /// 创建日志目录
     system("mkdir -p logs");
 
     try {

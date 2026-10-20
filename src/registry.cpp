@@ -3,96 +3,108 @@
 #include "minispdlog/sinks/color_console_sink.h"
 #include <stdexcept>
 #include <vector>
-namespace minispdlog{
-    registry::registry() {
-        auto console_sink = std::make_shared<sinks::color_console_sink_mt>();
-        default_logger_ = std::make_shared<logger>("",console_sink);
-        default_logger_->set_level(level::info);
-    }
+namespace minispdlog {
+registry::registry() {
+    auto console_sink = std::make_shared<sinks::color_console_sink_mt>();
+    auto initial = std::make_shared<logger>("", console_sink);
+    initial->set_level(level::info);
+    default_logger_.store(std::move(initial), std::memory_order_relaxed);
+}
 
-    registry& registry::instance() {
-        static registry instance;
-        return instance;
-    }
+registry& registry::instance() {
+    static registry instance;
+    return instance;
+}
 
-    void registry::register_logger(std::shared_ptr<logger> new_logger) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        throw_if_exists(new_logger->name());
-        loggers_[new_logger->name()] = std::move(new_logger);
-    }
+void registry::register_logger(std::shared_ptr<logger> new_logger) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    throw_if_exists(new_logger->name());
+    loggers_[new_logger->name()] = std::move(new_logger);
+}
 
-    std::shared_ptr<logger> registry::get(const std::string& logger_name) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto it = loggers_.find(logger_name);
-        if(it != loggers_.end()){
-            return it->second;
-        }
-        return nullptr;
+std::shared_ptr<logger> registry::get(const std::string& logger_name) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = loggers_.find(logger_name);
+    if (it != loggers_.end()) {
+        return it->second;
     }
-    
-    void registry::drop(const std::string & logger_name){
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto is_default_logger = default_logger_ && default_logger_->name() == logger_name;
-        loggers_.erase(logger_name);
-        if(is_default_logger){
-            default_logger_.reset();
-        }
-    }
+    return nullptr;
+}
 
-    void registry::drop_all() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        loggers_.clear();
-        default_logger_.reset();
-    }
-
-    std::shared_ptr<logger> registry::default_logger() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return default_logger_; 
-    }
-
-    void registry::set_default_logger(std::shared_ptr<logger> new_default_logger) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        default_logger_ = std::move(new_default_logger);
-    }
-
-    void registry::set_level(level log_level) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (default_logger_) {
-            default_logger_->set_level(log_level);
-        }
-        for(auto& pair : loggers_){
-            pair.second->set_level(log_level);
-        }
-    }
-
-    void registry::flush_all() {
-        std::vector<std::shared_ptr<logger>> snapshot;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (default_logger_) {
-                snapshot.push_back(default_logger_);
-            }
-            snapshot.reserve(snapshot.size() + loggers_.size());
-            for (auto& pair : loggers_) {
-                snapshot.push_back(pair.second);
-            }
-        }
-        for (auto& lg : snapshot) {
-            if (lg) {
-                lg->flush();
-            }
-        }
-    }
-
-    void registry::throw_if_exists(const std::string& logger_name) {
-        if(loggers_.find(logger_name) != loggers_.end()){
-            throw std::runtime_error("Logger with name '" + logger_name + "' already exists.");
-        }
-    }
-
-    void shutdown() {
-        registry::instance().flush_all();
-        thread_pool_manager::instance().shutdown();
-        registry::instance().drop_all();
+void registry::drop(const std::string& logger_name) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto current_default = default_logger_.load(std::memory_order_acquire);
+    const bool is_default_logger = current_default && current_default->name() == logger_name;
+    loggers_.erase(logger_name);
+    if (is_default_logger) {
+        default_logger_.compare_exchange_strong(current_default, std::shared_ptr<logger>{}, std::memory_order_acq_rel,
+                                                std::memory_order_acquire);
     }
 }
+
+void registry::drop_all() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    loggers_.clear();
+    default_logger_.store({}, std::memory_order_release);
+}
+
+std::shared_ptr<logger> registry::default_logger() {
+    return default_logger_.load(std::memory_order_acquire);
+}
+
+void registry::set_default_logger(std::shared_ptr<logger> new_default_logger) {
+    default_logger_.store(std::move(new_default_logger), std::memory_order_release);
+}
+
+std::shared_ptr<logger> registry::set_default_logger_if_empty(std::shared_ptr<logger> candidate) {
+    std::shared_ptr<logger> expected;
+    if (default_logger_.compare_exchange_strong(expected, candidate, std::memory_order_acq_rel,
+                                                std::memory_order_acquire)) {
+        return candidate;
+    }
+    return expected;
+}
+
+void registry::set_level(level log_level) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto current_default = default_logger_.load(std::memory_order_acquire);
+    if (current_default) {
+        current_default->set_level(log_level);
+    }
+    for (auto& pair : loggers_) {
+        pair.second->set_level(log_level);
+    }
+}
+
+void registry::flush_all() {
+    std::vector<std::shared_ptr<logger>> snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto current_default = default_logger_.load(std::memory_order_acquire);
+        if (current_default) {
+            snapshot.push_back(std::move(current_default));
+        }
+        snapshot.reserve(snapshot.size() + loggers_.size());
+        for (auto& pair : loggers_) {
+            snapshot.push_back(pair.second);
+        }
+    }
+    for (auto& lg : snapshot) {
+        if (lg) {
+            lg->flush();
+        }
+    }
+}
+
+void registry::throw_if_exists(const std::string& logger_name) {
+    if (loggers_.find(logger_name) != loggers_.end()) {
+        throw std::runtime_error("Logger with name '" + logger_name + "' already exists.");
+    }
+}
+
+void shutdown() {
+    registry::instance().flush_all();
+    thread_pool_manager::instance().shutdown();
+    registry::instance().drop_all();
+}
+} ///< 结束 minispdlog 命名空间。

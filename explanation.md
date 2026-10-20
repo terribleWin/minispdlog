@@ -1,5 +1,8 @@
 # minispdlog 项目说明
 
+> [!NOTE]
+> 本文是保留的长篇架构导读，适合了解演进背景，但个别内部类型名和热路径描述可能滞后于当前实现。例如异步热路径现在使用 raw logger 指针配合析构排空，并用 256 字节内联 payload 缓冲；`file_sink` 当前基于 `FILE*`。专题语义请优先查看[文档中心](docs/README.md)、[同步与异步模型](docs/sync-async-model.md)、[耐久性与恢复](docs/durability-and-recovery.md)和 [API 速查](docs/api.md)。
+
 > 本文结合仓库**真实代码与路径**，说明项目定位、分层架构、核心数据流、技术栈落地方式、线程安全边界，以及测试 / Qt 等工程用法。  
 > 标准：**C++20** · 架构参考 [spdlog](https://github.com/gabime/spdlog) · 格式化依赖 `third_party/fmt`
 
@@ -51,7 +54,7 @@ minispdlog::info("Hello, {}!", "World");
 | 类别 | 选型 | 在本项目中的角色 |
 |------|------|------------------|
 | 语言标准 | **C++20** | `CMakeLists.txt` 强制；使用 `if constexpr`、`string_view`、`format_string` 等 |
-| 构建 | **CMake ≥ 3.11** | 静态库 `minispdlog`、测试、可选 Qt/Benchmark、ASan/TSan 变体 |
+| 构建 | **CMake ≥ 3.20** | 静态库 `minispdlog`、测试、可选 Qt/Benchmark、ASan/TSan 变体 |
 | 字符串格式化 | **{fmt}**（`third_party/fmt`） | `logger::log` 中 `fmt::format_to`；编译期检查格式串 |
 | 异步队列 | 自研 **circular_q + mpmc_blocking_queue** | 热路径；mutex + 双条件变量 |
 | 无锁队列 | 自研 **spsc_queue / mpsc_queue**（Vyukov） | 可通过 `init_lockfree_thread_pool` / `async_queue_type::lockfree` 接入异步热路径（单 worker） |
@@ -188,7 +191,7 @@ info("x") → logger::log                 【③】过滤 + fmt（仍在业务�
 ```
 
 - **目的地不写在队列字符串里**，而在 logger 的 `sinks_`。  
-- `async_msg::worker_ptr` 保活 logger，并告诉 worker「用哪套 Sink」。  
+- `async_msg::worker` 告诉 worker「用哪套 Sink」；直接调用线程池的共享指针重载时，`keep_alive` 还会显式保活 logger。全局 `async_logger` 的生产者线程会缓存线程池共享快照，只有配置版本变化时才刷新，避免每条日志争用共享引用计数。
 - 换 Sink / 换同步异步，尽量不动 ④ 的消息定义。
 
 ---
@@ -215,16 +218,16 @@ info("x") → logger::log                 【③】过滤 + fmt（仍在业务�
 | 类型 | 文件 | 角色 |
 |------|------|------|
 | `log_msg` | `details/log_msg.h` | **同步与异步共用**载体：级别、时间、tid/pid、logger 名、payload、`source_loc`、`color_range_*` |
-| `async_msg` | `details/async_msg.h` | 继承 `log_msg_buffer`（再继承 `log_msg`），增加 `msg_type` 与 `worker_ptr`，专供**队列传递** |
+| `async_msg` | `details/async_msg.h` | 继承 `log_msg_buffer`（再继承 `log_msg`），增加 `msg_type`、`worker` 与可选 `keep_alive`，专供**队列传递** |
 
 ```
-log_msg  ←  log_msg_buffer（深拷贝 payload → std::string）  ←  async_msg
-                                                              + msg_type
-                                                              + shared_ptr<logger> worker_ptr
+log_msg  ←  log_msg_buffer（深拷贝 payload → 256B 内联/动态缓冲） ← async_msg
+                                                                  + msg_type
+                                                                  + logger* worker
+                                                                  + 可选 shared_ptr keep_alive
 ```
 
-`worker_ptr` 指向的是 **logger**，不是某个文件路径；多目的地由 logger 内多个 Sink 完成。  
-使用 `shared_ptr` 的主因是 **异步期间延长 logger 生命周期**，不是「一个指针对应多个目的地」。
+`worker` 指向的是 **logger**，不是某个文件路径；多目的地由 logger 内多个 Sink 完成。异步 logger 的热路径使用裸指针，并在析构前同步刷新；线程池公开重载允许调用方传入 `shared_ptr`，由消息中的 `keep_alive` 延长生命周期。
 
 ### 4.2 两层「格式化」
 
@@ -243,7 +246,7 @@ log_msg  ←  log_msg_buffer（深拷贝 payload → std::string）  ←  async_
 ### 4.3 同步调用链
 
 ```
-logger->info("User {} logged in", "Alice")   // sourced_fmt 捕获调用点
+logger->info("User {} logged in", "Alice"); ///< sourced_fmt 捕获调用点。
   → logger::log（logger.h）
        should_log → fmt::format_to → 构造 log_msg → sink_it_
   → logger::sink_it_ = backend_sink_it_（logger.cpp）：atomic 快照 sinks_
@@ -267,9 +270,11 @@ logger->info("User {} logged in", "Alice")   // sourced_fmt 捕获调用点
 使用前需：
 
 ```cpp
-minispdlog::init_thread_pool(/*queue_size*/ 8192, /*threads*/ 1);
+constexpr std::size_t queue_size = 8192;
+constexpr std::size_t worker_count = 1;
+minispdlog::init_thread_pool(queue_size, worker_count);
 auto lg = minispdlog::async_file_mt("async", "async.log", false);
-// 或 async_json_file_mt("async", "async.json.log", false);
+/// 也可使用 async_json_file_mt("async", "async.json.log", false)。
 lg->info("hello");
 minispdlog::shutdown();
 ```
@@ -287,10 +292,10 @@ minispdlog::shutdown();
 - 内部持有 `circular_q`，所有访问包在 `mutex_` 下 → **线程安全 MPMC**；
 - 生产：`enqueue`（满则阻塞）/ `enqueue_nowait`（满则覆盖最旧）；
 - 消费：`dequeue_for`（`wait_for`：被唤醒或超时）；
-- 对应策略枚举 `async_overflow_policy`：`block` / `overrun_oldest` / `discard_new`。
+- 对应策略枚举 `async_overflow_policy`：`block` / `overrun_oldest` / `discard_new`；覆盖策略只覆盖日志消息，队首为刷新或终止控制消息时拒绝新日志并计入丢弃数。
 - 无锁后端只允许 `block` 与 `discard_new`；`overrun_oldest` 会抛异常。
 
-**注意**：「队列槽位预分配」≠ 整条链路零分配；`async_msg` 仍会为 payload 分配 `std::string`。
+**注意**：「队列槽位预分配」≠ 整条链路零分配；`async_msg` 对短正文使用 256 字节内联空间，超出后仍会扩展动态缓冲区。
 
 ### 4.6 线程池
 
@@ -405,11 +410,11 @@ logger 的 `sinks_` 是 copy-on-write：`add_sink` / `remove_sink` 持 mutex 发
 ### 6.4 移动与视图
 
 - 队列传递优先 `move`；`async_msg` 禁止拷贝；  
-- 同步路径可用 `string_view`；**入队前**必须深拷贝为拥有型 `string`（`log_msg_buffer`）。
+- 同步路径可用 `string_view`；**入队前**必须深拷贝到拥有型 `log_msg_buffer`，短正文使用内联空间。
 
 ### 6.5 并发与 OOP
 
-- 默认热路径：`mutex` + `condition_variable`（MPMC）；可选 `async_queue_type::lockfree`（MPSC + `atomic.wait`）；  
+- 默认热路径：`mutex` + `condition_variable`（MPMC）；可选 `async_queue_type::lockfree`（MPSC + 条件变量停车/定时唤醒）；
 - 虚接口 `sink`/`formatter`、`async_logger` 继承 `logger` 只改投递；  
 - Meyers' Singleton：`registry::instance()` 等（C++11 起初始化线程安全）。
 
@@ -455,7 +460,7 @@ Sink 另有一把锁，避免多 worker 同时写同一文件；设计上先放�
 
 1. 多线程共享 Sink → 用 `*_mt`；  
 2. 异步前先 `init_thread_pool`（或 `init_lockfree_thread_pool`）；退出前 `shutdown()`；  
-3. `async_logger` 必须由 `shared_ptr` 管理；  
+3. 优先使用工厂返回的 `shared_ptr` 管理 `async_logger`，并在销毁前停止并发生产者；
 4. 勿把裸 `circular_q` 给多线程；  
 5. 默认热路径是**有锁** MPMC；无锁路径单 worker，且不要用 `overrun_oldest`。
 
@@ -463,7 +468,7 @@ Sink 另有一把锁，避免多 worker 同时写同一文件；设计上先放�
 
 `minispdlog::shutdown()`：先对已注册 logger `flush_all`，再停全局线程池（`terminate` × N + `join`），最后 `drop_all`。用过异步时，在 `main` 返回前调用。  
 无全局 atexit；`overrun_oldest` / `discard_new` 丢掉的消息不会落盘。  
-`async_logger::flush()` 向池投递 flush 并等待 ack（`async_msg::ack`），保证已入队记录写出。
+`async_logger::flush()` 向池投递 flush 并等待 ack（`async_msg::ack`）：单 worker 由 FIFO 保证前序记录完成，多 worker 再等待并行处理中记录归零，最终保证刷新边界前的已入队记录写出。
 
 ---
 
@@ -471,13 +476,13 @@ Sink 另有一把锁，避免多 worker 同时写同一文件；设计上先放�
 
 | 项 | 说明 |
 |----|------|
-| 框架 | doctest，单入口 `tests/test_main.cpp` → `minispdlog_tests` |
-| 用例 | `tests/unit/`：level / sink / logger / registry / pattern / queue / async / utils / callback / daily / rotating / json / qt |
+| 框架 | doctest，源码只链接为一个 `minispdlog_tests`；CTest 按 15 个组件源文件注册条目 |
+| 用例 | `tests/unit/`：level / sink / logger / registry / pattern / queue / async / utils / callback / daily / rotating / json / buffered / network / qt |
 | 辅助 | `mock_sink` 内存断言；`test_fixture` 临时目录 RAII（析构用 `error_code`，避免 noexcept 里抛异常） |
 | 运行 | `./build/tests/minispdlog_tests`；`ctest --test-dir build --output-on-failure` |
 | 过滤 | `-tc='*json*'` 或标签；PowerShell 下 `[json]` 可能被当成通配符 |
 | Benchmark | 需安装 Google Benchmark；目标 `minispdlog_bench_async` / `_queue` |
-| CI | lint（clang-format 允许名单 + clang-tidy）· g++/clang × Release / RelASan / RelTSan · Windows MSVC · coverage |
+| CI | lint（项目自有 C++ 全量 clang-format + clang-tidy）· g++/clang × Release / RelASan / RelTSan · Windows MSVC · coverage |
 
 队列微基准已控制 Iterations/消息量，避免默认统计跑数十分钟；多生产者无锁用例因实验队列风险已收紧。
 
@@ -503,10 +508,10 @@ Sink 另有一把锁，避免多 worker 同时写同一文件；设计上先放�
 4. API 示例：
 
 ```cpp
-#include "minispdlog/sinks/qt_sink.h"  // 需 MINISPDLOG_WITH_QT
+#include "minispdlog/sinks/qt_sink.h" ///< 需要启用 MINISPDLOG_WITH_QT。
 
 auto logger = minispdlog::qt_logger_mt("gui", textEdit, "append");
-// QPlainTextEdit → "appendPlainText"
+/// QPlainTextEdit 对应 appendPlainText。
 logger->info("hello from qt_sink");
 ```
 
@@ -605,15 +610,15 @@ cmake --build build -j
 ### ADR-001：异步默认 MPMC 阻塞队列，可选无锁 MPSC
 
 默认 `mpmc_blocking_queue` + `circular_q`（多 worker、block/overrun 清晰）。  
-低延迟场景可用 `init_lockfree_thread_pool`（Vyukov MPSC，单 worker + `atomic.wait`）。
+低延迟场景可用 `init_lockfree_thread_pool`（有界 MPSC，单 worker + 条件变量停车/定时唤醒）。
 
 ### ADR-002：`base_sink<Mutex>` + `null_mutex`
 
 一套 Sink 覆盖 MT/ST，避免复制两套实现。
 
-### ADR-003：异步深拷贝 payload + `shared_ptr<logger>`
+### ADR-003：异步拥有 payload + 明确日志器生命周期
 
-跨线程安全传递内容与「用哪个 logger 输出」，并延长生命周期。
+跨线程消息拥有正文；异步 logger 热路径使用裸 worker 指针并在析构前同步排空，直接使用线程池时还可传入 `shared_ptr<logger>` 显式延长生命周期。
 
 ### ADR-004：Qt 可选、SDK 外置到 `third_party/qt`
 

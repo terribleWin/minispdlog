@@ -1,0 +1,93 @@
+# minispdlog Doxygen 配置
+# 在仓库根目录运行：doxygen Doxyfile
+
+DOXYFILE_ENCODING      = UTF-8
+PROJECT_NAME           = "minispdlog"
+PROJECT_NUMBER         = "0.1.0"
+PROJECT_BRIEF          = "同步、异步、耐久与结构化并存的 C++20 日志库"
+OUTPUT_LANGUAGE        = Chinese
+OUTPUT_DIRECTORY       = build/docs/doxygen
+CREATE_SUBDIRS         = NO
+ALLOW_UNICODE_NAMES    = YES
+
+# 路径与输入
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+INPUT                  = README.md \
+                         explanation.md \
+                         docs \
+                         include \
+                         src
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.h \
+                         *.hpp \
+                         *.cpp \
+                         *.md
+RECURSIVE              = YES
+EXCLUDE                = third_party \
+                         tests \
+                         build \
+                         results
+EXCLUDE_PATTERNS       = */third_party/* \
+                         */tests/* \
+                         */build/* \
+                         */results/* \
+                         */.git/*
+EXCLUDE_SYMLINKS       = YES
+
+# 注释提取
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_PACKAGE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+MULTILINE_CPP_IS_BRIEF = YES
+INHERIT_DOCS           = YES
+INLINE_INFO            = YES
+SORT_MEMBER_DOCS       = YES
+SORT_BRIEF_DOCS        = YES
+
+# Markdown 文档
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+USE_MDFILE_AS_MAINPAGE = README.md
+TOC_INCLUDE_HEADINGS   = 4
+
+# 源码导航
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+VERBATIM_HEADERS       = YES
+
+# 诊断：保留警告，便于逐步完善公开接口注释
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_IF_INCOMPLETE_DOC = YES
+WARN_NO_PARAMDOC       = NO
+
+# HTML 是默认交付形式；不要求本机安装 LaTeX 或 Graphviz
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_TIMESTAMP         = NO
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+HAVE_DOT               = NO
+
+# C++ 解析
+OPTIMIZE_OUTPUT_FOR_C  = NO
+BUILTIN_STL_SUPPORT    = YES
+CPP_CLI_SUPPORT        = NO
+CLANG_ASSISTED_PARSING = NO
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = MINISPDLOG_API=
+

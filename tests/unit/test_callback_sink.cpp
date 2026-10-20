@@ -36,9 +36,7 @@ TEST_CASE("callback_sink delivers formatted line [sink][callback][gui]") {
 
 TEST_CASE("callback_sink works with multi-sink logger [sink][callback][gui]") {
     std::vector<std::string> lines;
-    auto cb = std::make_shared<callback_sink_mt>([&](const std::string& formatted) {
-        lines.push_back(formatted);
-    });
+    auto cb = std::make_shared<callback_sink_mt>([&](const std::string& formatted) { lines.push_back(formatted); });
     cb->set_formatter(std::make_unique<pattern_formatter>("[%L] %v"));
     auto mock = std::make_shared<mock_sink_mt>();
     mock->set_formatter(std::make_unique<pattern_formatter>("[%L] %v"));
@@ -67,13 +65,12 @@ TEST_CASE("callback_sink record callback exposes log_msg fields [sink][callback]
         std::string formatted;
     } rec;
 
-    auto sink = std::make_shared<callback_sink_st>(
-        [&](const details::log_msg& msg, const std::string& formatted) {
-            rec.logger_name.assign(msg.logger_name.data(), msg.logger_name.size());
-            rec.lvl = msg.lvl;
-            rec.payload.assign(msg.payload.data(), msg.payload.size());
-            rec.formatted = formatted;
-        });
+    auto sink = std::make_shared<callback_sink_st>([&](const details::log_msg& msg, const std::string& formatted) {
+        rec.logger_name.assign(msg.logger_name.data(), msg.logger_name.size());
+        rec.lvl = msg.lvl;
+        rec.payload.assign(msg.payload.data(), msg.payload.size());
+        rec.formatted = formatted;
+    });
     sink->set_formatter(std::make_unique<pattern_formatter>("[%L] %v"));
 
     logger lg("metrics", sink);
@@ -90,9 +87,9 @@ TEST_CASE("callback_sink flush callback runs on flush [sink][callback]") {
     std::atomic<int> logs{0};
     std::atomic<int> flushes{0};
 
-    auto sink = std::make_shared<callback_sink_mt>(
-        [&](const std::string&) { logs.fetch_add(1, std::memory_order_relaxed); },
-        [&]() { flushes.fetch_add(1, std::memory_order_relaxed); });
+    auto sink =
+        std::make_shared<callback_sink_mt>([&](const std::string&) { logs.fetch_add(1, std::memory_order_relaxed); },
+                                           [&]() { flushes.fetch_add(1, std::memory_order_relaxed); });
 
     logger lg("flush-cb", sink);
     lg.info("one");
@@ -116,9 +113,7 @@ TEST_CASE("callback_sink flush without hook is a no-op [sink][callback]") {
 
 TEST_CASE("callback_sink_mt serializes concurrent logs [sink][callback][thread]") {
     std::vector<std::string> lines;
-    auto sink = std::make_shared<callback_sink_mt>([&](const std::string& formatted) {
-        lines.push_back(formatted);
-    });
+    auto sink = std::make_shared<callback_sink_mt>([&](const std::string& formatted) { lines.push_back(formatted); });
     sink->set_formatter(std::make_unique<pattern_formatter>("%v"));
 
     logger lg("cb-conc", sink);
@@ -144,12 +139,9 @@ TEST_CASE("callback_logger factories register loggers [sink][callback][registry]
     std::vector<std::string> mt_lines;
     std::vector<level> st_levels;
 
-    auto mt = callback_logger_mt("cb-factory-mt", [&](const std::string& line) {
-        mt_lines.push_back(line);
-    });
+    auto mt = callback_logger_mt("cb-factory-mt", [&](const std::string& line) { mt_lines.push_back(line); });
     auto st = callback_logger_st(
-        "cb-factory-st",
-        [&](const details::log_msg& msg, const std::string&) { st_levels.push_back(msg.lvl); });
+        "cb-factory-st", [&](const details::log_msg& msg, const std::string&) { st_levels.push_back(msg.lvl); });
 
     REQUIRE(get("cb-factory-mt") != nullptr);
     REQUIRE(get("cb-factory-st") != nullptr);

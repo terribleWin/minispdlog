@@ -1,4 +1,4 @@
-// Handwritten benches: format-only vs labeled disk I/O. Not part of minispdlog_tests.
+/// 手写性能基准：区分纯格式化与标记后的磁盘 I/O，不属于 minispdlog_tests 单元测试。
 #include "minispdlog/async.h"
 #include "minispdlog/json_formatter.h"
 #include "minispdlog/minispdlog.h"
@@ -36,10 +36,10 @@ struct BenchmarkResult {
     double throughput;
 
     void print() const {
-        std::cout << std::left << std::setw(44) << test_name << " | " << std::right << std::setw(10)
-                  << message_count << " | " << std::setw(8) << thread_count << " | " << std::setw(10)
-                  << std::fixed << std::setprecision(2) << elapsed_ms << " | " << std::setw(12)
-                  << std::fixed << std::setprecision(0) << throughput << std::endl;
+        std::cout << std::left << std::setw(44) << test_name << " | " << std::right << std::setw(10) << message_count
+                  << " | " << std::setw(8) << thread_count << " | " << std::setw(10) << std::fixed
+                  << std::setprecision(2) << elapsed_ms << " | " << std::setw(12) << std::fixed << std::setprecision(0)
+                  << throughput << std::endl;
     }
 };
 
@@ -205,8 +205,7 @@ int main() {
 
     std::cout << "测试配置：" << std::endl;
     std::cout << "  单线程测试：" << SINGLE_ITERATIONS << " 条消息" << std::endl;
-    std::cout << "  多线程测试：" << MULTI_THREADS << " 线程 x " << MULTI_MESSAGES << " 消息\n"
-              << std::endl;
+    std::cout << "  多线程测试：" << MULTI_THREADS << " 线程 x " << MULTI_MESSAGES << " 消息\n" << std::endl;
 
     std::cout << "执行 format-only 测试..." << std::endl;
     benchmark_format_default(SINGLE_ITERATIONS);

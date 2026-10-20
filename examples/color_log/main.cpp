@@ -19,7 +19,7 @@
 
 namespace fs = std::filesystem;
 
-// Windows cmd/PowerShell 默认不解析 ANSI；打开 VT 后彩色 sink 才能上色。
+/** @brief 在 Windows 终端启用 ANSI VT 序列解析。 */
 static void enable_terminal_color() {
 #ifdef _WIN32
     const auto enable = [](DWORD handle_id) {
@@ -57,8 +57,10 @@ static void emit_levels(minispdlog::logger& lg) {
     lg.critical("critical: cannot continue");
 }
 
-// Same messages as the terminal walkthrough (1–4 + 6). Pattern still uses %^ / %$;
-// file sinks ignore the span and write plain text.
+/**
+ * @brief 输出与终端演示相同的消息组。
+ * @note 格式模式仍使用 `%^`/`%$`，文件 Sink 忽略着色区间并写入纯文本。
+ */
 static void emit_showcase(minispdlog::logger& lg) {
     lg.set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] %v");
     emit_levels(lg);
@@ -98,46 +100,44 @@ int main() {
     const fs::path plain_file = dir / "demo.plain.log";
 
     try {
-        // 1. 终端彩色：默认 pattern 只给级别名上色（%^ … %$）
+        /// 1. 终端彩色：默认 pattern 只给级别名上色（%^ … %$）
         banner("1. Terminal color (default: only [level] is colored)");
         auto console = minispdlog::stdout_color_mt("console");
         emit_levels(*console);
 
-        // 2. 局部颜色：只给消息正文上色
+        /// 2. 局部颜色：只给消息正文上色
         banner("2. Partial color: only the message body");
         console->set_pattern("[%n] [%l] %^%v%$");
         console->info("this sentence is green");
         console->error("this sentence is red");
 
-        // 3. 局部颜色：logger 名和级别共用一段着色区间
+        /// 3. 局部颜色：logger 名和级别共用一段着色区间
         banner("3. Partial color: logger name and level");
         console->set_pattern("%^[%n] [%L]%$ %v");
         console->warn("name and level share one color span");
 
-        // 4. 整行着色：把整行包进 %^ … %$，或省略标记（区间为空则整行着色）
+        /// 4. 整行着色：把整行包进 %^ … %$，或省略标记（区间为空则整行着色）
         banner("4. Whole-line color");
         console->set_pattern("%^[%n] [%L] %v%$");
         console->info("the entire line is wrapped in %^ %$");
         console->set_pattern("[%n] [%L] %v");
         console->error("no %^ %$ markers: color sink paints the whole line");
 
-        // 5. stderr 彩色 logger
+        /// 5. stderr 彩色 logger
         banner("5. stderr color logger");
         auto err = minispdlog::stderr_color_mt("stderr");
         err->error("this line is written to stderr");
 
-        // 6. 同一条日志：终端带色，指定文件写入完整展示（file_sink 不插入 ANSI）
+        /// 6. 同一条日志：终端带色，指定文件写入完整展示（file_sink 不插入 ANSI）
         banner("6. Same logger: color on terminal, full showcase in file");
         auto color_sink = std::make_shared<minispdlog::sinks::color_console_sink_mt>();
-        auto file_sink =
-            std::make_shared<minispdlog::sinks::file_sink_mt>(dual_file.string(), true);
-        auto dual = std::make_shared<minispdlog::logger>(
-            "dual", minispdlog::logger::sink_list{color_sink, file_sink});
+        auto file_sink = std::make_shared<minispdlog::sinks::file_sink_mt>(dual_file.string(), true);
+        auto dual = std::make_shared<minispdlog::logger>("dual", minispdlog::logger::sink_list{color_sink, file_sink});
         minispdlog::register_logger(dual);
         emit_showcase(*dual);
         dual->flush();
 
-        // 7. 只写指定文件：把前面相关展示完整落盘（无 ANSI）
+        /// 7. 只写指定文件：把前面相关展示完整落盘（无 ANSI）
         banner("7. File-only logger (specified path, full showcase, no color)");
         auto file = minispdlog::basic_logger_mt("file", plain_file.string(), true);
         emit_showcase(*file);

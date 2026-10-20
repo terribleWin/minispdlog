@@ -13,13 +13,13 @@ using namespace minispdlog;
 void test_circular_queue() {
     std::cout << "\n========== 测试1:循环队列基础功能 ==========\n";
 
-    details::circular_q<int> q(5); // 容量为5
+    details::circular_q<int> q(5); ///< 容量为5
 
     std::cout << "容量: " << q.capacity() << "\n";
     std::cout << "初始大小: " << q.size() << "\n";
     std::cout << "是否为空: " << (q.empty() ? "是" : "否") << "\n\n";
 
-    // 添加元素
+    /// 添加元素
     std::cout << "添加元素 1, 2, 3:\n";
     q.push_back(1);
     q.push_back(2);
@@ -28,13 +28,13 @@ void test_circular_queue() {
     std::cout << "当前大小: " << q.size() << "\n";
     std::cout << "队首元素: " << q.front() << "\n\n";
 
-    // 移除元素
+    /// 移除元素
     std::cout << "移除队首:\n";
     q.pop_front();
     std::cout << "当前大小: " << q.size() << "\n";
     std::cout << "新队首: " << q.front() << "\n\n";
 
-    // 测试满队列
+    /// 测试满队列
     std::cout << "继续添加直到满:\n";
     q.push_back(4);
     q.push_back(5);
@@ -43,7 +43,7 @@ void test_circular_queue() {
     std::cout << "是否已满: " << (q.full() ? "是" : "否") << "\n";
     std::cout << "当前大小: " << q.size() << "\n\n";
 
-    // 测试溢出(覆盖)
+    /// 测试溢出(覆盖)
     std::cout << "再添加元素(会覆盖最旧的):\n";
     q.push_back(7);
 
@@ -56,7 +56,7 @@ void test_mpmc_queue_basic() {
 
     details::mpmc_blocking_queue<int> q(10);
 
-    // 入队
+    /// 入队
     std::cout << "入队 3 个元素...\n";
     q.enqueue(100);
     q.enqueue(200);
@@ -64,7 +64,7 @@ void test_mpmc_queue_basic() {
 
     std::cout << "队列大小: " << q.size() << "\n\n";
 
-    // 出队
+    /// 出队
     std::cout << "出队:\n";
     int value;
     if (q.dequeue_for(value, std::chrono::milliseconds(100))) {
@@ -103,12 +103,12 @@ void test_mpmc_queue_timeout() {
 void test_mpmc_queue_blocking() {
     std::cout << "\n========== 测试4:MPMC队列阻塞机制 ==========\n";
 
-    details::mpmc_blocking_queue<int> q(3); // 小队列
+    details::mpmc_blocking_queue<int> q(3); ///< 小队列
 
     std::atomic<bool> producer_started{false};
     std::atomic<bool> consumer_ready{false};
 
-    // 生产者线程:先填满队列,然后阻塞
+    /// 生产者线程:先填满队列,然后阻塞
     std::thread producer([&]() {
         std::cout << "生产者:填满队列...\n";
         q.enqueue(1);
@@ -118,18 +118,18 @@ void test_mpmc_queue_blocking() {
         producer_started = true;
 
         std::cout << "生产者:队列已满,下一次入队将阻塞...\n";
-        q.enqueue(4); // 这里会阻塞
+        q.enqueue(4); ///< 这里会阻塞
         std::cout << "生产者:入队成功(消费者已取走元素)\n";
     });
 
-    // 等待生产者填满队列
+    /// 等待生产者填满队列
     while (!producer_started) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    // 消费者:取走元素,解除生产者阻塞
+    /// 消费者:取走元素,解除生产者阻塞
     std::cout << "消费者:取出一个元素...\n";
     int value;
     q.dequeue_for(value, std::chrono::seconds(1));
@@ -153,7 +153,7 @@ void test_mpmc_queue_concurrent() {
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    // 启动生产者
+    /// 启动生产者
     std::vector<std::thread> producers;
     for (int i = 0; i < num_producers; ++i) {
         producers.emplace_back([&, i]() {
@@ -164,7 +164,7 @@ void test_mpmc_queue_concurrent() {
         });
     }
 
-    // 启动消费者
+    /// 启动消费者
     std::vector<std::thread> consumers;
     for (int i = 0; i < num_consumers; ++i) {
         consumers.emplace_back([&]() {
@@ -177,7 +177,7 @@ void test_mpmc_queue_concurrent() {
         });
     }
 
-    // 等待所有线程完成
+    /// 等待所有线程完成
     for (auto& t : producers)
         t.join();
     for (auto& t : consumers)
@@ -202,15 +202,15 @@ void test_mpmc_queue_concurrent() {
 void test_thread_pool_basic() {
     std::cout << "\n========== 测试6:线程池基础功能 ==========\n";
 
-    // 创建线程池: 队列大小1024, 2个工作线程
+    /// 创建线程池: 队列大小1024, 2个工作线程
     details::thread_pool pool(1024, 2);
 
-    // 创建一个简单的 logger
+    /// 创建一个简单的 logger
     auto console_sink = std::make_shared<sinks::console_sink_mt>();
 
     std::cout << "向线程池投递3条日志消息:\n\n";
 
-    // 投递日志消息 - 为每次调用创建新的 shared_ptr
+    /// 投递日志消息 - 为每次调用创建新的 shared_ptr
     details::log_msg msg1("test", level::info, "Message 1 from thread pool");
     auto test_logger1 = std::make_shared<logger>("test", console_sink);
     pool.post_log(std::move(test_logger1), msg1);
@@ -223,7 +223,7 @@ void test_thread_pool_basic() {
     auto test_logger3 = std::make_shared<logger>("test", console_sink);
     pool.post_log(std::move(test_logger3), msg3);
 
-    // 等待处理
+    /// 等待处理
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     std::cout << "\n 线程池处理完成\n";
@@ -235,7 +235,7 @@ void test_thread_pool_performance() {
     details::thread_pool pool(8192, 2);
 
     auto console_sink = std::make_shared<sinks::console_sink_mt>();
-    console_sink->set_level(level::off); // 关闭输出,只测试队列性能
+    console_sink->set_level(level::off); ///< 关闭输出,只测试队列性能
 
     const int num_messages = 100000;
 
@@ -255,7 +255,7 @@ void test_thread_pool_performance() {
     std::cout << "入队耗时: " << enqueue_duration.count() << " ms\n";
     std::cout << "入队吞吐: " << (num_messages * 1000.0 / enqueue_duration.count()) << " 条/秒\n";
 
-    // 等待处理完成
+    /// 等待处理完成
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
     std::cout << "溢出次数: " << pool.overrun_count() << "\n";
@@ -300,7 +300,7 @@ void test_thread_pool_multithreaded() {
     std::cout << "耗时: " << duration.count() << " ms\n";
     std::cout << "吞吐量: " << (total_sent * 1000.0 / duration.count()) << " 条/秒\n";
 
-    // 等待处理
+    /// 等待处理
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     std::cout << " 多线程并发测试完成\n";
@@ -309,7 +309,7 @@ void test_thread_pool_multithreaded() {
 void test_overflow_policy() {
     std::cout << "\n========== 测试9:溢出策略 ==========\n";
 
-    // 创建小队列测试溢出
+    /// 创建小队列测试溢出
     details::thread_pool pool(100, 1);
 
     auto console_sink = std::make_shared<sinks::console_sink_mt>();
@@ -318,7 +318,7 @@ void test_overflow_policy() {
 
     std::cout << "快速投递大量消息到小队列(容量100)...\n";
 
-    // 使用 nowait 模式快速填满队列
+    /// 使用 nowait 模式快速填满队列
     for (int i = 0; i < 1000; ++i) {
         details::log_msg msg("overflow", level::info, "Overflow test");
         pool.post_log_nowait(std::move(test_logger), msg);
@@ -353,7 +353,7 @@ void test_graceful_shutdown() {
 
         std::cout << "线程池即将销毁...\n";
     }
-    // 线程池析构,应该等待所有线程正常结束
+    /// 线程池析构,应该等待所有线程正常结束
 
     std::cout << " 线程池已优雅关闭\n";
 }

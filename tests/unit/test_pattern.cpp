@@ -1,6 +1,6 @@
 #include "framework/doctest.h"
-#include "minispdlog/minispdlog.h"
 #include "framework/mock_sink.h"
+#include "minispdlog/minispdlog.h"
 
 #include <chrono>
 #include <sstream>
@@ -9,10 +9,10 @@
 using namespace minispdlog;
 using minispdlog::tests::mock_sink_mt;
 
-// ============================================================
-// 测试套件：格式化引擎 (formatter.h / pattern_formatter.h)
-// 标签: [formatter]
-// ============================================================
+/// ============================================================
+/// 测试套件：格式化引擎 (formatter.h / pattern_formatter.h)
+/// 标签: [formatter]
+/// ============================================================
 
 TEST_CASE("pattern_formatter with default pattern [formatter]") {
     auto mock = std::make_shared<mock_sink_mt>();
@@ -21,10 +21,10 @@ TEST_CASE("pattern_formatter with default pattern [formatter]") {
     lg.info("test message");
 
     REQUIRE(mock->message_count() == 1);
-    // 默认格式包含时间戳、级别、logger名、消息
+    /// 默认格式包含时间戳、级别、logger名、消息
     auto msg = mock->at(0);
     REQUIRE(msg.find("test message") != std::string::npos);
-    // 默认格式包含新行，用 find 检查子串而非精确匹配
+    /// 默认格式包含新行，用 find 检查子串而非精确匹配
     CHECK(msg.find("test message") != std::string::npos);
     CHECK(msg.find("info") != std::string::npos);
 }
@@ -37,7 +37,7 @@ TEST_CASE("pattern_formatter custom message-only pattern [formatter]") {
     lg.info("hello world");
 
     REQUIRE(mock->message_count() == 1);
-    // pattern_formatter 始终在末尾追加新行
+    /// pattern_formatter 始终在末尾追加新行
     REQUIRE(mock->at(0) == "hello world\n");
 }
 
@@ -86,13 +86,13 @@ TEST_CASE("pattern_formatter with thread id placeholder [formatter]") {
     lg.info("test");
 
     REQUIRE(mock->message_count() == 1);
-    // 线程 ID 格式不确定，但至少包含 "thread" 字样
+    /// 线程 ID 格式不确定，但至少包含 "thread" 字样
     REQUIRE(mock->at(0).find("thread") != std::string::npos);
 }
 
 TEST_CASE("pattern_formatter with datetime placeholders [formatter]") {
     auto mock = std::make_shared<mock_sink_mt>();
-    // 年月日时分秒占位符
+    /// 年月日时分秒占位符
     mock->set_formatter(std::make_unique<pattern_formatter>("%Y-%m-%d %H:%M:%S"));
     logger lg("DateTime", mock);
 
@@ -100,29 +100,27 @@ TEST_CASE("pattern_formatter with datetime placeholders [formatter]") {
 
     REQUIRE(mock->message_count() == 1);
     auto msg = mock->at(0);
-    // 验证格式：YYYY-MM-DD HH:MM:SS
-    // 验证格式中包含关键字符，不假定具体位置（避免编码问题）
+    /// 验证格式：YYYY-MM-DD HH:MM:SS
+    /// 验证格式中包含关键字符，不假定具体位置（避免编码问题）
     CHECK(msg.find('-') != std::string::npos);
     CHECK(msg.find(':') != std::string::npos);
     CHECK(msg.find(' ') != std::string::npos);
-    // pattern_formatter 末尾会追加新行，所以长度至少 20
+    /// pattern_formatter 末尾会追加新行，所以长度至少 20
     CHECK(msg.size() >= 20);
 }
 
 TEST_CASE("pattern_formatter with combined pattern [formatter]") {
     auto mock = std::make_shared<mock_sink_mt>();
-    mock->set_formatter(
-        std::make_unique<pattern_formatter>("[%Y-%m-%d %H:%M:%S] [%n] [%L] %v")
-    );
+    mock->set_formatter(std::make_unique<pattern_formatter>("[%Y-%m-%d %H:%M:%S] [%n] [%L] %v"));
     logger lg("Combined", mock);
 
     lg.info("combined test");
 
     REQUIRE(mock->message_count() == 1);
     auto msg = mock->at(0);
-    REQUIRE(msg.find("Combined") != std::string::npos);   // logger name
-    REQUIRE(msg.find("info") != std::string::npos);       // level
-    REQUIRE(msg.find("combined test") != std::string::npos);  // message
+    REQUIRE(msg.find("Combined") != std::string::npos);      ///< 日志器名称。
+    REQUIRE(msg.find("info") != std::string::npos);          ///< 日志级别。
+    REQUIRE(msg.find("combined test") != std::string::npos); ///< 日志正文。
 }
 
 TEST_CASE("pattern_formatter handles empty message [formatter]") {
@@ -133,7 +131,7 @@ TEST_CASE("pattern_formatter handles empty message [formatter]") {
     lg.info("");
 
     REQUIRE(mock->message_count() == 1);
-    // 空消息 + 新行 = 仅新行
+    /// 空消息 + 新行 = 仅新行
     REQUIRE(mock->at(0) == "\n");
 }
 
@@ -146,9 +144,9 @@ TEST_CASE("pattern_formatter handles long message [formatter]") {
     lg.info("{}", long_msg);
 
     REQUIRE(mock->message_count() == 1);
-    // pattern_formatter 追加了新行，所以长度是 10001
+    /// pattern_formatter 追加了新行，所以长度是 10001
     REQUIRE(mock->at(0).size() == 10001);
-    // 验证前 10000 个字符是 'x'
+    /// 验证前 10000 个字符是 'x'
     REQUIRE(mock->at(0).substr(0, 10000) == std::string(10000, 'x'));
 }
 
@@ -161,7 +159,7 @@ TEST_CASE("formatter can be changed at runtime [formatter]") {
     lg.info("after");
 
     REQUIRE(mock->message_count() == 2);
-    // 第一条使用默认格式（可能包含时间戳等）    // 第二条使用自定义格式
+    /// 第一条使用默认格式（可能包含时间戳等）    ///< 第二条使用自定义格式
     REQUIRE(mock->at(1).find("[info]") != std::string::npos);
 }
 
@@ -177,10 +175,8 @@ TEST_CASE("pattern_formatter set_pattern via sink API [formatter]") {
 }
 
 TEST_CASE("pattern_formatter milliseconds and microseconds [formatter]") {
-    const auto tp = log_clock::time_point{} + std::chrono::milliseconds(1234) +
-                    std::chrono::microseconds(56);
-    details::log_msg msg(tp, details::source_loc("dir/foo.cpp", 42, "bar"), "lg", level::info,
-                         "hi");
+    const auto tp = log_clock::time_point{} + std::chrono::milliseconds(1234) + std::chrono::microseconds(56);
+    details::log_msg msg(tp, details::source_loc("dir/foo.cpp", 42, "bar"), "lg", level::info, "hi");
     pattern_formatter fmt("%e %f");
     fmt::memory_buffer buf;
     fmt.format(msg, buf);
@@ -242,8 +238,7 @@ TEST_CASE("pattern_formatter %^ %$ mark color_range [formatter][color]") {
     REQUIRE(line == "[info] hello\n");
     REQUIRE(msg.color_range_start == 1);
     REQUIRE(msg.color_range_end == 5);
-    REQUIRE(line.substr(msg.color_range_start, msg.color_range_end - msg.color_range_start) ==
-            "info");
+    REQUIRE(line.substr(msg.color_range_start, msg.color_range_end - msg.color_range_start) == "info");
 }
 
 TEST_CASE("pattern without color flags leaves range empty [formatter][color]") {
@@ -266,8 +261,7 @@ TEST_CASE("write_colored paints only the marked span [sink][color]") {
     std::ostringstream out;
     sinks::write_colored(out, msg, formatted, sinks::color::green);
     const auto painted = out.str();
-    REQUIRE(painted.find(std::string(sinks::color::green) + "info" + sinks::color::reset) !=
-            std::string::npos);
+    REQUIRE(painted.find(std::string(sinks::color::green) + "info" + sinks::color::reset) != std::string::npos);
     REQUIRE(painted.find("hello") != std::string::npos);
     REQUIRE(painted.find(std::string(sinks::color::green) + "[info]") == std::string::npos);
 }
@@ -284,8 +278,7 @@ TEST_CASE("write_colored paints the whole line when range is empty [sink][color]
 }
 
 TEST_CASE("default pattern uses unified separators [formatter]") {
-    REQUIRE(std::string(pattern_formatter::default_pattern) ==
-            "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] %v");
+    REQUIRE(std::string(pattern_formatter::default_pattern) == "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] %v");
     auto mock = std::make_shared<mock_sink_mt>();
     logger lg("DefaultSep", mock);
     lg.info("sep");
@@ -323,8 +316,7 @@ TEST_CASE("empty source location omits source flags [formatter]") {
 TEST_CASE("pattern_formatter reuses Y-m-d H:M:S within the same second [formatter]") {
     const auto tp = log_clock::time_point(std::chrono::seconds(1'700'000'000));
     details::log_msg a(tp, details::source_loc{}, "lg", level::info, "a");
-    details::log_msg b(tp + std::chrono::milliseconds(250), details::source_loc{}, "lg", level::info,
-                       "b");
+    details::log_msg b(tp + std::chrono::milliseconds(250), details::source_loc{}, "lg", level::info, "b");
     pattern_formatter fmt("%Y-%m-%d %H:%M:%S.%e");
     fmt::memory_buffer first;
     fmt::memory_buffer second;

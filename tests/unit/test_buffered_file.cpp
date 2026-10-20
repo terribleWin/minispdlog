@@ -41,7 +41,7 @@ batch_config hold() {
     return batch_config::until_flush();
 }
 
-} // namespace
+} ///< 结束匿名命名空间。
 
 TEST_CASE("buffered_file_sink holds lines until flush [sink][buffer]") {
     test_fixture fx;

@@ -6,6 +6,10 @@ BasedOnStyle: LLVM
 Language: Cpp
 Standard: c++20
 
+# 统一使用 LF；采用兼容 clang-format 14+ 的配置项。
+DeriveLineEnding: false
+UseCRLF: false
+
 # 缩进
 IndentWidth: 4
 TabWidth: 4
@@ -25,7 +29,8 @@ AllowShortLoopsOnASingleLine: false
 
 # 命名空间
 NamespaceIndentation: Inner
-FixNamespaceComments: true
+# 命名空间结束位置由中文 Doxygen 尾注释统一标记，禁止工具改回英文普通注释。
+FixNamespaceComments: false
 
 # 模板
 AlwaysBreakTemplateDeclarations: Yes
