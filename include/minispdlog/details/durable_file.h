@@ -101,7 +101,7 @@ namespace details {
     MINISPDLOG_API void unregister_durable_file(durable_file* file);
     MINISPDLOG_API void dump_durable_files() noexcept;
 
-} ///< 结束 details 命名空间。
+} // details
 
 /**
  * @brief 尽力将所有已注册耐久文件的前台缓冲区写入磁盘。
@@ -117,4 +117,4 @@ MINISPDLOG_API void dump_buffered_logs() noexcept;
  */
 MINISPDLOG_API void install_crash_flush();
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

@@ -158,5 +158,5 @@ namespace details {
         alignas(cache_line_size_) std::atomic<std::size_t> read_idx_{0};
     };
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog

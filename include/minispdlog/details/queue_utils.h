@@ -34,5 +34,5 @@ namespace details {
     /** @brief 用于隔离高争用原子的保守缓存行字节数。 */
     inline constexpr std::size_t kCacheLineSize = 64;
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog

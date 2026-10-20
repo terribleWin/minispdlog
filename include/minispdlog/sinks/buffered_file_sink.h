@@ -138,5 +138,5 @@ namespace sinks {
     using buffered_file_sink_mt = buffered_file_sink<std::mutex>;
     using buffered_file_sink_st = buffered_file_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // sinks
+} // minispdlog

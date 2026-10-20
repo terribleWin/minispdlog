@@ -11,6 +11,7 @@ namespace minispdlog {
 namespace {
 
     constexpr char kHex[] = "0123456789abcdef";
+    constexpr char kReplacementCharacter[] = "\xEF\xBF\xBD";
 
     constexpr auto kNeedEscape = []() {
         std::array<unsigned char, 256> table{};
@@ -37,6 +38,48 @@ namespace {
     template <std::size_t N>
     void append_lit(fmt::memory_buffer& dest, const char (&text)[N]) {
         details::append_raw(dest, text, N - 1);
+    }
+
+    bool is_utf8_continuation(unsigned char c) {
+        return (c & 0xC0U) == 0x80U;
+    }
+
+    std::size_t valid_utf8_sequence_length(const unsigned char* data, std::size_t remaining) {
+        const auto c0 = data[0];
+        if (c0 < 0x80U) {
+            return 1;
+        }
+        if (c0 >= 0xC2U && c0 <= 0xDFU) {
+            return remaining >= 2 && is_utf8_continuation(data[1]) ? 2 : 0;
+        }
+        if (remaining < 3) {
+            return 0;
+        }
+        const auto c1 = data[1];
+        const auto c2 = data[2];
+        if (c0 == 0xE0U) {
+            return c1 >= 0xA0U && c1 <= 0xBFU && is_utf8_continuation(c2) ? 3 : 0;
+        }
+        if ((c0 >= 0xE1U && c0 <= 0xECU) || (c0 >= 0xEEU && c0 <= 0xEFU)) {
+            return is_utf8_continuation(c1) && is_utf8_continuation(c2) ? 3 : 0;
+        }
+        if (c0 == 0xEDU) {
+            return c1 >= 0x80U && c1 <= 0x9FU && is_utf8_continuation(c2) ? 3 : 0;
+        }
+        if (remaining < 4) {
+            return 0;
+        }
+        const auto c3 = data[3];
+        if (c0 == 0xF0U) {
+            return c1 >= 0x90U && c1 <= 0xBFU && is_utf8_continuation(c2) && is_utf8_continuation(c3) ? 4 : 0;
+        }
+        if (c0 >= 0xF1U && c0 <= 0xF3U) {
+            return is_utf8_continuation(c1) && is_utf8_continuation(c2) && is_utf8_continuation(c3) ? 4 : 0;
+        }
+        if (c0 == 0xF4U) {
+            return c1 >= 0x80U && c1 <= 0x8FU && is_utf8_continuation(c2) && is_utf8_continuation(c3) ? 4 : 0;
+        }
+        return 0;
     }
 
     void append_escaped(fmt::memory_buffer& dest, string_view_t text) {
@@ -83,10 +126,21 @@ namespace {
                 run = i;
                 continue;
             }
-            if (c == 0xE2 && i + 2 < n) {
-                const auto c1 = static_cast<unsigned char>(data[i + 1]);
-                const auto c2 = static_cast<unsigned char>(data[i + 2]);
-                if (c1 == 0x80 && (c2 == 0xA8 || c2 == 0xA9)) {
+            if (c >= 0x80U) {
+                const auto* bytes = reinterpret_cast<const unsigned char*>(data + i);
+                const auto sequence_length = valid_utf8_sequence_length(bytes, n - i);
+                if (sequence_length == 0) {
+                    if (i > run) {
+                        details::append_raw(dest, data + run, i - run);
+                    }
+                    append_lit(dest, kReplacementCharacter);
+                    ++i;
+                    run = i;
+                    continue;
+                }
+                const auto c1 = sequence_length >= 2 ? bytes[1] : 0;
+                const auto c2 = sequence_length >= 3 ? bytes[2] : 0;
+                if (c == 0xE2U && c1 == 0x80U && (c2 == 0xA8U || c2 == 0xA9U)) {
                     if (i > run) {
                         details::append_raw(dest, data + run, i - run);
                     }
@@ -99,6 +153,8 @@ namespace {
                     run = i;
                     continue;
                 }
+                i += sequence_length;
+                continue;
             }
             ++i;
         }
@@ -133,7 +189,7 @@ namespace {
         return str != nullptr ? string_view_t(str) : string_view_t{};
     }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 json_formatter::field* json_formatter::upsert_(std::string key) {
     for (auto& item : fields_) {
@@ -216,7 +272,7 @@ void json_formatter::format(const details::log_msg& msg, fmt::memory_buffer& des
     dest.push_back('"');
 
     append_key(dest, "ts", first);
-    const auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(msg.time.time_since_epoch()).count();
+    const auto ts = std::chrono::floor<std::chrono::milliseconds>(msg.time.time_since_epoch()).count();
     details::append_int64(dest, static_cast<std::int64_t>(ts));
 
     append_key(dest, "level", first);
@@ -280,4 +336,4 @@ std::unique_ptr<formatter> json_formatter::clone() const {
     return std::make_unique<json_formatter>(*this);
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

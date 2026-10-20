@@ -80,5 +80,5 @@ namespace sinks {
     using callback_sink_mt = callback_sink<std::mutex>;
     using callback_sink_st = callback_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // sinks
+} // minispdlog

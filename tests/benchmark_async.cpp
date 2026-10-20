@@ -37,7 +37,7 @@ private:
     details::thread_pool* pool_;
 };
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 static void BM_LoggerDisabled(benchmark::State& state) {
     auto sink = std::make_shared<sinks::null_sink_mt>();

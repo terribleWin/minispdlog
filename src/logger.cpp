@@ -137,4 +137,4 @@ void logger::sink_it_(const details::log_msg& msg) {
     backend_sink_it_(msg);
 }
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

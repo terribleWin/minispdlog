@@ -69,12 +69,14 @@ minispdlog::init_thread_pool(opts);
 if (auto* pool = minispdlog::get_thread_pool()) {
     auto overwritten = pool->overrun_count();
     auto discarded = pool->discard_count();
+    auto backend_errors = pool->error_count();
     (void)overwritten;
     (void)discarded;
+    (void)backend_errors;
 }
 ```
 
-计数属于线程池而非单个 logger。替换线程池会开始一组新的池级计数。`get_thread_pool()` 返回由线程局部共享快照支撑的裸指针：稳定配置下只读取版本号，不反复修改共享引用计数；重配置后才刷新快照。旧池可能已经停止，但当前快照不会悬空。若要跨线程保存，应改用 `thread_pool_manager::instance().get()` 显式持有共享所有权。
+计数属于线程池而非单个 logger。`error_count()` 统计工作线程中 Sink 写入抛出的异常；工作线程会继续运行，相应提交区间的首个异常会在下一次等待式 `flush()` 重新抛出，同一异常只报告一次。替换线程池会开始一组新的池级计数。`get_thread_pool()` 返回由线程局部共享快照支撑的裸指针：稳定配置下只读取版本号，不反复修改共享引用计数；重配置后才刷新快照。旧池可能已经停止，但当前快照不会悬空。若要跨线程保存，应改用 `thread_pool_manager::instance().get()` 显式持有共享所有权。
 
 ## 顺序与可见性
 
@@ -85,7 +87,7 @@ if (auto* pool = minispdlog::get_thread_pool()) {
 
 ## `flush()`、析构与 `shutdown()`
 
-`async_logger::flush()` 投递一个带确认的刷新消息并等待，最后直接刷新该 logger 的 Sink。单工作线程依靠 FIFO 保证刷新消息之前的日志已经完成，不需要逐条原子计数；多工作线程还会等待并行处理中日志的计数归零。它是同步边界，不只是“请求稍后刷新”。
+`async_logger::flush()` 先切换一个轻量提交代际，再投递带确认的刷新消息。它只等待调用提交点之前已登记的日志；在此之后持续产生的新日志属于下一代，不会让本次刷新无限等待。目标代际完成后会再直接刷新该 logger 的 Sink，因此它是同步边界，不只是“请求稍后刷新”。
 
 异步 logger 析构时，如果仍持有活动线程池，会尝试投递并等待刷新。仍建议应用显式控制顺序：
 

@@ -5,6 +5,8 @@
 #include <fmt/format.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <exception>
 #include <future>
 #include <memory>
 #include <utility>
@@ -121,14 +123,18 @@ namespace details {
         std::shared_ptr<logger> keep_alive;
         /// 同步刷新等待完成时使用的确认信号。
         std::shared_ptr<std::promise<void>> ack;
+        /// 日志所属的刷新屏障代际，仅对 log 消息有效。
+        std::uint64_t completion_epoch{0};
 
         async_msg() = default;
 
         /// 移动消息并转移生命周期及确认信号。
         async_msg(async_msg&& other) noexcept
             : log_msg_buffer(std::move(other)), msg_type(other.msg_type), worker(other.worker),
-              keep_alive(std::move(other.keep_alive)), ack(std::move(other.ack)) {
+              keep_alive(std::move(other.keep_alive)), ack(std::move(other.ack)),
+              completion_epoch(other.completion_epoch) {
             other.worker = nullptr;
+            other.completion_epoch = 0;
         }
 
         /// 移动赋值；覆盖旧刷新消息前先完成其确认信号。
@@ -141,6 +147,8 @@ namespace details {
                 other.worker = nullptr;
                 keep_alive = std::move(other.keep_alive);
                 ack = std::move(other.ack);
+                completion_epoch = other.completion_epoch;
+                other.completion_epoch = 0;
             }
             return *this;
         }
@@ -151,14 +159,21 @@ namespace details {
         /// 销毁未处理消息前完成可能存在的确认信号。
         ~async_msg() { notify_ack(); }
 
-        /// 以不抛异常的方式完成并释放确认信号，重复调用不会重复通知。
-        void notify_ack() noexcept {
+        /**
+         * @brief 以不抛异常的方式完成并释放确认信号。
+         * @param error 后端操作失败时传递给等待方的异常；空值表示成功。
+         */
+        void notify_ack(std::exception_ptr error = {}) noexcept {
             auto pending = std::move(ack);
             if (!pending) {
                 return;
             }
             try {
-                pending->set_value();
+                if (error) {
+                    pending->set_exception(std::move(error));
+                } else {
+                    pending->set_value();
+                }
             } catch (...) {
             }
         }
@@ -182,5 +197,5 @@ namespace details {
         explicit async_msg(async_msg_type type) : async_msg(type, static_cast<logger*>(nullptr)) {}
     };
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog

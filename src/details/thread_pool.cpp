@@ -12,7 +12,7 @@ namespace details {
 
     namespace {
         constexpr auto kLongIdle = std::chrono::seconds(10);
-    }
+    } // namespace
 
     thread_pool::thread_pool(std::size_t queue_size, std::size_t threads_n, async_queue_type queue_type)
         : thread_pool(thread_pool_options{queue_size, threads_n, queue_type}) {}
@@ -119,28 +119,60 @@ namespace details {
         }
     }
 
-    void thread_pool::on_log_completed_() noexcept {
-        if (worker_count_ == 1) {
-            return;
-        }
-        /// 等待方只关心计数归零，因此仅由最后一条完成的日志触发系统级通知。
-        const auto prev = pending_logs_.fetch_sub(1, std::memory_order_release);
-        if (prev == 1) {
-            pending_logs_.notify_all();
+    std::uint64_t thread_pool::register_log_epoch_() noexcept {
+        for (;;) {
+            const auto epoch = current_epoch_.load(std::memory_order_acquire);
+            auto& state = epochs_[epoch & 1U];
+            state.pending.fetch_add(1, std::memory_order_acq_rel);
+
+            /// flush 可能恰好在两次读取之间切换代际。此时撤销旧代际登记并
+            /// 重试，保证每条日志只属于一个稳定的提交区间。
+            if (current_epoch_.load(std::memory_order_acquire) == epoch) {
+                return epoch;
+            }
+            on_log_completed_(epoch);
         }
     }
 
-    void thread_pool::wait_for_pending_logs_() noexcept {
-        /// 单工作线程按 FIFO 处理 flush 控制消息，其前序日志在控制消息执行前必然完成。
-        if (worker_count_ == 1) {
-            return;
+    void thread_pool::on_log_completed_(std::uint64_t epoch, std::exception_ptr error) noexcept {
+        auto& state = epochs_[epoch & 1U];
+        if (error) {
+            error_count_.fetch_add(1, std::memory_order_relaxed);
+            try {
+                std::lock_guard<std::mutex> lock(state.error_mutex);
+                if (!state.first_error) {
+                    state.first_error = std::move(error);
+                }
+            } catch (...) {
+                /// 异常计数仍然保留；错误记录本身不得终止工作线程。
+            }
         }
+
+        /// 等待方只关心本代计数归零，因此仅由最后一条完成的日志触发通知。
+        const auto prev = state.pending.fetch_sub(1, std::memory_order_release);
+        if (prev == 1) {
+            state.pending.notify_all();
+        }
+    }
+
+    void thread_pool::wait_for_epoch_(std::uint64_t epoch) noexcept {
+        auto& pending = epochs_[epoch & 1U].pending;
         for (;;) {
-            const auto pending = pending_logs_.load(std::memory_order_acquire);
-            if (pending == 0) {
+            const auto count = pending.load(std::memory_order_acquire);
+            if (count == 0) {
                 return;
             }
-            pending_logs_.wait(pending, std::memory_order_acquire);
+            pending.wait(count, std::memory_order_acquire);
+        }
+    }
+
+    std::exception_ptr thread_pool::take_epoch_error_(std::uint64_t epoch) noexcept {
+        auto& state = epochs_[epoch & 1U];
+        try {
+            std::lock_guard<std::mutex> lock(state.error_mutex);
+            return std::exchange(state.first_error, {});
+        } catch (...) {
+            return {};
         }
     }
 
@@ -158,8 +190,8 @@ namespace details {
                 return false;
             }
             if (result.overwritten) {
-                /// 谓词只允许覆盖日志消息，因此相应地完成一条待处理日志计数。
-                on_log_completed_();
+                /// 谓词只允许覆盖日志消息，因此必须归还旧消息所属代际的计数。
+                on_log_completed_(result.overwritten->completion_epoch);
             }
             return true;
         }
@@ -213,14 +245,18 @@ namespace details {
                                         "use block or discard_new");
         }
 
-        if (worker_count_ > 1) {
-            pending_logs_.fetch_add(1, std::memory_order_relaxed);
+        msg.completion_epoch = register_log_epoch_();
+        const auto completion_epoch = msg.completion_epoch;
+        bool queued = false;
+        try {
+            queued = (queue_type_ == async_queue_type::lockfree) ? enqueue_lockfree_(std::move(msg), policy)
+                                                                 : enqueue_blocking_(std::move(msg), policy, false);
+        } catch (...) {
+            on_log_completed_(completion_epoch);
+            throw;
         }
-        const bool queued = (queue_type_ == async_queue_type::lockfree)
-                                ? enqueue_lockfree_(std::move(msg), policy)
-                                : enqueue_blocking_(std::move(msg), policy, false);
         if (!queued) {
-            on_log_completed_();
+            on_log_completed_(completion_epoch);
             return;
         }
         maybe_wake_log_();
@@ -262,6 +298,13 @@ namespace details {
             return;
         }
 
+        std::unique_lock<std::mutex> barrier_lock;
+        std::uint64_t target_epoch = 0;
+        if (wait) {
+            barrier_lock = std::unique_lock<std::mutex>(flush_barrier_mutex_);
+            target_epoch = current_epoch_.fetch_add(1, std::memory_order_acq_rel);
+        }
+
         async_msg flush_msg(async_msg_type::flush, worker);
         std::future<void> done;
         if (wait) {
@@ -277,10 +320,29 @@ namespace details {
         force_wake_();
 
         if (wait) {
-            done.wait();
-            wait_for_pending_logs_();
+            std::exception_ptr error;
+            try {
+                done.get();
+            } catch (...) {
+                error = std::current_exception();
+            }
+            wait_for_epoch_(target_epoch);
+            auto log_error = take_epoch_error_(target_epoch);
+            if (!error && log_error) {
+                error = std::move(log_error);
+            }
+            barrier_lock.unlock();
             if (worker != nullptr) {
-                worker->backend_flush_();
+                try {
+                    worker->backend_flush_();
+                } catch (...) {
+                    if (!error) {
+                        error = std::current_exception();
+                    }
+                }
+            }
+            if (error) {
+                std::rethrow_exception(error);
             }
         }
     }
@@ -291,6 +353,13 @@ namespace details {
                 logger_ptr->backend_flush_();
             }
             return;
+        }
+
+        std::unique_lock<std::mutex> barrier_lock;
+        std::uint64_t target_epoch = 0;
+        if (wait) {
+            barrier_lock = std::unique_lock<std::mutex>(flush_barrier_mutex_);
+            target_epoch = current_epoch_.fetch_add(1, std::memory_order_acq_rel);
         }
 
         auto keep = logger_ptr;
@@ -309,10 +378,29 @@ namespace details {
         force_wake_();
 
         if (wait) {
-            done.wait();
-            wait_for_pending_logs_();
+            std::exception_ptr error;
+            try {
+                done.get();
+            } catch (...) {
+                error = std::current_exception();
+            }
+            wait_for_epoch_(target_epoch);
+            auto log_error = take_epoch_error_(target_epoch);
+            if (!error && log_error) {
+                error = std::move(log_error);
+            }
+            barrier_lock.unlock();
             if (keep) {
-                keep->backend_flush_();
+                try {
+                    keep->backend_flush_();
+                } catch (...) {
+                    if (!error) {
+                        error = std::current_exception();
+                    }
+                }
+            }
+            if (error) {
+                std::rethrow_exception(error);
             }
         }
     }
@@ -400,16 +488,24 @@ namespace details {
     bool thread_pool::process_msg_(async_msg& incoming) {
         switch (incoming.msg_type) {
         case async_msg_type::log:
-            if (incoming.worker != nullptr) {
-                incoming.worker->backend_sink_it_(incoming);
+            try {
+                if (incoming.worker != nullptr) {
+                    incoming.worker->backend_sink_it_(incoming);
+                }
+                on_log_completed_(incoming.completion_epoch);
+            } catch (...) {
+                on_log_completed_(incoming.completion_epoch, std::current_exception());
             }
-            on_log_completed_();
             return true;
         case async_msg_type::flush:
-            if (incoming.worker != nullptr) {
-                incoming.worker->backend_flush_();
+            try {
+                if (incoming.worker != nullptr) {
+                    incoming.worker->backend_flush_();
+                }
+                incoming.notify_ack();
+            } catch (...) {
+                incoming.notify_ack(std::current_exception());
             }
-            incoming.notify_ack();
             return true;
         case async_msg_type::terminate:
             return false;
@@ -417,5 +513,5 @@ namespace details {
         return true;
     }
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog

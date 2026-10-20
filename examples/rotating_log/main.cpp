@@ -63,7 +63,7 @@ void print_log_files() {
     }
 }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 int main() {
     bool logger_registered = false;

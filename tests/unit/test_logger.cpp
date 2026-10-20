@@ -48,7 +48,7 @@ private:
     bool released_{false};
 };
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 /** @file test_logger.cpp @brief 覆盖 logger 的格式化、过滤、刷新与并发 Sink 快照。 */
 
@@ -345,10 +345,7 @@ TEST_CASE("logger should_log respects logger level [logger][level]") {
     REQUIRE(lg.should_log(level::critical) == true);
 }
 
-TEST_CASE("logger compile-time level filtering [logger][compile]") {
-    /// 编译时级别控制：如果 MINISPDLOG_ACTIVE_LEVEL 设置为 INFO，
-    /// trace/debug 的日志在编译期就被移除，不会调用运行时逻辑
-    /// 这个测试主要验证编译通过且行为正确
+TEST_CASE("logger member functions remain runtime filtered [logger][level]") {
     auto mock = std::make_shared<mock_sink_mt>();
     logger lg("CompileTest", mock);
 
@@ -356,6 +353,27 @@ TEST_CASE("logger compile-time level filtering [logger][compile]") {
     lg.debug("debug msg");
     lg.info("info msg");
 
-    /// 在默认编译设置下（trace 级别启用），所有消息都应该输出
+    /// 成员函数不由编译期宏删除；编译期过滤只作用于 MINISPDLOG_* 宏。
     REQUIRE(mock->message_count() == 3);
+}
+
+TEST_CASE("logger macros honor the configured compile-time level [logger][compile]") {
+    auto mock = std::make_shared<mock_sink_mt>();
+    auto lg = std::make_shared<logger>("MacroCompileLevel", mock);
+
+    MINISPDLOG_LOGGER_TRACE(lg, "trace msg");
+    MINISPDLOG_LOGGER_DEBUG(lg, "debug msg");
+    MINISPDLOG_LOGGER_INFO(lg, "info msg");
+
+    std::size_t expected = 0;
+#if MINISPDLOG_ACTIVE_LEVEL <= MINISPDLOG_LEVEL_TRACE
+    ++expected;
+#endif
+#if MINISPDLOG_ACTIVE_LEVEL <= MINISPDLOG_LEVEL_DEBUG
+    ++expected;
+#endif
+#if MINISPDLOG_ACTIVE_LEVEL <= MINISPDLOG_LEVEL_INFO
+    ++expected;
+#endif
+    REQUIRE(mock->message_count() == expected);
 }

@@ -195,7 +195,7 @@ void require_file_record_shape(const std::string& line) {
     REQUIRE_FALSE(json_quoted_field(line, "level").empty());
 }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 TEST_CASE("json_formatter emits JSON Lines with core fields [formatter][json]") {
     details::log_msg msg("app", level::info, "hello");
@@ -236,6 +236,14 @@ TEST_CASE("json_formatter ts matches log_msg time [formatter][json]") {
     REQUIRE(line.find(expected_time_field(tp)) != std::string::npos);
 }
 
+TEST_CASE("json_formatter floors timestamps before Unix epoch [formatter][json][time]") {
+    const auto duration = std::chrono::duration_cast<log_clock::duration>(-std::chrono::microseconds{1});
+    details::log_msg msg(log_clock::time_point{duration}, details::source_loc{}, "lg", level::info, "x");
+    const auto line = format_json(msg);
+    REQUIRE(line.find("\"time\":\"1969-12-31T23:59:59.999Z\"") != std::string::npos);
+    REQUIRE(line.find("\"ts\":-1") != std::string::npos);
+}
+
 TEST_CASE("json_formatter empty payload and logger [formatter][json]") {
     details::log_msg msg("", level::debug, "");
     const auto line = format_json(msg);
@@ -260,6 +268,18 @@ TEST_CASE("json_formatter passes through utf-8 [formatter][json]") {
     const auto line = format_json(msg);
     REQUIRE(line.find("\"logger\":\"中文\"") != std::string::npos);
     REQUIRE(line.find("\"msg\":\"你好\"") != std::string::npos);
+}
+
+TEST_CASE("json_formatter replaces malformed utf-8 [formatter][json]") {
+    std::string payload{"before"};
+    payload.push_back(static_cast<char>(0x80));
+    payload.push_back(static_cast<char>(0xC0));
+    payload += "after";
+    details::log_msg msg("lg", level::info, payload);
+    const auto line = format_json(msg);
+    const std::string replacement{"\xEF\xBF\xBD"};
+    REQUIRE(line.find("\"msg\":\"before" + replacement + replacement + "after\"") != std::string::npos);
+    REQUIRE(line.find(static_cast<char>(0x80)) == std::string::npos);
 }
 
 TEST_CASE("json_formatter escapes logger name [formatter][json]") {

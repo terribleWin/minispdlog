@@ -88,4 +88,4 @@ private:
 using mock_sink_mt = mock_sink<std::mutex>;
 using mock_sink_st = mock_sink<sinks::null_mutex>;
 
-} ///< 结束 minispdlog::tests 命名空间。
+} // minispdlog::tests

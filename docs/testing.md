@@ -1,6 +1,6 @@
 # 测试指南
 
-minispdlog 使用仓库内的 doctest 单头文件作为测试内核，并把 `tests/unit/*.cpp` 只编译、链接为一个 `minispdlog_tests` 可执行文件。CTest 再按 15 个源文件注册组件条目，因此既避免重复编译，又能并行运行并把失败定位到具体组件。
+minispdlog 使用仓库内的 doctest 单头文件作为测试内核，并把 `tests/unit/*.cpp` 只编译、链接为一个 `minispdlog_tests` 可执行文件。CTest 再按 16 个源文件注册组件条目，因此既避免重复编译，又能并行运行并把失败定位到具体组件。
 
 ## 运行全部测试
 

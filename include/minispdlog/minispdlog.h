@@ -543,4 +543,4 @@ inline void critical(details::sourced_fmt<std::type_identity_t<Args>...> srcfmt,
 
 /** @} */
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

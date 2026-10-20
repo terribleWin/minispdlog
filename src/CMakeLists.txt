@@ -5,6 +5,7 @@ set(MINISPDLOG_SOURCES
     logger.cpp
     details/utils.cpp
     details/thread_pool.cpp
+    details/coro_executor.cpp
     registry.cpp
     formatter.cpp
     rotating_file_sink.cpp

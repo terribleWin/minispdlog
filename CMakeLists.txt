@@ -102,10 +102,9 @@ if(CLANG_TIDY)
         "${CLANG_TIDY};--config-file=${CMAKE_SOURCE_DIR}/.clang-tidy;--header-filter=include[/\\\\]minispdlog[/\\\\]")
 endif()
 
-# Release 构建默认只保留 info 及以上，trace/debug 编译期移除
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    add_compile_definitions(MINISPDLOG_ACTIVE_LEVEL=MINISPDLOG_LEVEL_INFO)
-endif()
+# Release 构建默认只保留 info 及以上，trace/debug 编译期移除。
+# 使用生成器表达式同时支持 Ninja 等单配置生成器和 Visual Studio 等多配置生成器。
+add_compile_definitions($<$<CONFIG:Release>:MINISPDLOG_ACTIVE_LEVEL=MINISPDLOG_LEVEL_INFO>)
 
 # ============================================================
 # 可选 Qt GUI Sink（SDK 建议装到 third_party/qt，见 scripts/setup_qt.sh）

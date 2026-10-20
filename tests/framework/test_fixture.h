@@ -149,4 +149,4 @@ inline void wait_for_filesystem() {
 #endif
 }
 
-} ///< 结束 minispdlog::tests 命名空间。
+} // minispdlog::tests

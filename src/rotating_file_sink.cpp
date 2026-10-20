@@ -74,7 +74,7 @@ namespace sinks {
         /// 写入前滚动，避免主动将同一条记录拆到两个文件。
         if (current_size_ + msg_size > max_size_) {
             rotate_();
-            current_size_ = 0;
+            current_size_ = file_size_(calc_filename(base_filename_, 0));
         }
 
         if (file_) {
@@ -115,10 +115,13 @@ namespace sinks {
             std::string target = calc_filename(base_filename_, i);
 
             if (!rename_file_(src, target)) {
-                /// 重命名失败时截断原文件，避免日志因持续增长占满磁盘。
-                file_ = fopen(src.c_str(), "wb");
+                /// 中间归档可能被其他进程占用；此时继续写活动文件，绝不能把
+                /// 任意归档误当成当前文件。保留已有数据并在下一条记录时重试滚动。
+                const auto current_file = calc_filename(base_filename_, 0);
+                file_ = open_log_file(current_file.c_str(), "ab");
                 if (!file_) {
-                    throw std::runtime_error("rotating_file_sink: Failed to reopen file after failed rotation: " + src);
+                    throw std::runtime_error(
+                        "rotating_file_sink: Failed to reopen current file after failed rotation: " + current_file);
                 }
                 return;
             }
@@ -176,5 +179,5 @@ namespace sinks {
     template class rotating_file_sink<std::mutex>;
     template class rotating_file_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // sinks
+} // minispdlog

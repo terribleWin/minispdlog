@@ -43,4 +43,4 @@ struct batch_config {
     }
 };
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog

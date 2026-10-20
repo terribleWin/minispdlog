@@ -10,6 +10,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -22,8 +23,8 @@ namespace details {
  * @brief 同步日志器之外的异步执行核心。
  *
  * 线程池保留两种后端：阻塞 MPMC 队列可配置多个消费者，无锁 MPSC 队列固定
- * 使用一个消费者。多工作线程后端通过 pending_logs_ 跟踪并行中的记录；单工作
- * 线程依靠队列 FIFO 与 flush 控制消息完成排空，避免逐条原子计数。
+ * 使用一个消费者。等待式 flush 通过双代际屏障只等待提交点之前的记录，提交点
+ * 之后持续产生的新日志不会延长本次等待。
  */
     class MINISPDLOG_API thread_pool {
     public:
@@ -91,6 +92,8 @@ namespace details {
         [[nodiscard]] std::size_t overrun_count() const;
         /// 获取因 discard_new 策略丢弃的消息数量。
         [[nodiscard]] std::size_t discard_count() const;
+        /// 获取异步日志后端累计抛出的异常数量。
+        [[nodiscard]] std::size_t error_count() const noexcept { return error_count_.load(std::memory_order_relaxed); }
         /// 获取当前队列后端类型。
         [[nodiscard]] async_queue_type queue_type() const noexcept { return queue_type_; }
         /// 获取实际工作线程数量。
@@ -117,10 +120,21 @@ namespace details {
         void force_wake_all_() noexcept;
         /// 发布一次消费者唤醒事件。
         void notify_consumer_() noexcept;
-        /// 多工作线程模式下，完成或覆盖一条日志后更新待处理计数。
-        void on_log_completed_() noexcept;
-        /// 等待多工作线程模式的待处理日志计数归零。
-        void wait_for_pending_logs_() noexcept;
+        /// 将日志登记到当前刷新代际，并返回稳定的代际编号。
+        [[nodiscard]] std::uint64_t register_log_epoch_() noexcept;
+        /// 完成、丢弃或覆盖日志后归还其代际计数，并按需记录后端异常。
+        void on_log_completed_(std::uint64_t epoch, std::exception_ptr error = {}) noexcept;
+        /// 等待指定刷新代际内的日志全部完成。
+        void wait_for_epoch_(std::uint64_t epoch) noexcept;
+        /// 取出指定代际首个尚未报告的后端异常；同一异常只报告一次。
+        [[nodiscard]] std::exception_ptr take_epoch_error_(std::uint64_t epoch) noexcept;
+
+        /// 固定复用的刷新代际状态；等待式 flush 串行切换，确保槽位不会提前复用。
+        struct epoch_state {
+            std::atomic<std::size_t> pending{0};
+            std::mutex error_mutex;
+            std::exception_ptr first_error;
+        };
 
         /// 队列后端类型。
         async_queue_type queue_type_;
@@ -151,12 +165,18 @@ namespace details {
         std::atomic<bool> shutting_down_{false};
         /// discard_new 策略累计丢弃数量。
         std::atomic<std::size_t> discard_count_{0};
-        /// 多工作线程模式下，已接收但尚未完成或被覆盖的日志数量。
-        std::atomic<std::size_t> pending_logs_{0};
+        /// 异步日志后端累计异常数量。
+        std::atomic<std::size_t> error_count_{0};
+        /// 当前接收新日志的刷新代际。
+        std::atomic<std::uint64_t> current_epoch_{0};
+        /// 两个固定槽位交替承载相邻代际，避免每条日志动态分配状态。
+        epoch_state epochs_[2];
+        /// 仅串行化低频等待式 flush，生产者热路径不获取该锁。
+        std::mutex flush_barrier_mutex_;
 
         /// 工作线程集合。
         std::vector<std::thread> threads_;
     };
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog

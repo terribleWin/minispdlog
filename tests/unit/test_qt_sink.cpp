@@ -47,7 +47,7 @@ void flush_events() {
     }
 }
 
-} ///< 结束匿名命名空间。
+} // namespace
 
 TEST_CASE("qt_sink appends to QTextEdit [sink][qt]") {
     auto& app = ensure_app();

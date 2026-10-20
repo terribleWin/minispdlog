@@ -79,8 +79,8 @@ namespace details {
         mutable std::size_t color_range_end{0};
     };
 
-} ///< 结束 details 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // details
+} // minispdlog
 
 #if MINISPDLOG_HAS_SOURCE_LOCATION
 /** @brief 在 C++20 环境中捕获当前调用点。 */

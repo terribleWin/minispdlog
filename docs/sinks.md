@@ -46,6 +46,14 @@ log->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%L%$] [%s:%#] %v");
 
 logger 会为当前每个 Sink 编译或克隆独立 formatter。主要 pattern 标志见 [API 速查](api.md)。JSON wrapper 默认拒绝被 pattern 改回文本，详见[结构化日志](structured-logging.md)。
 
+面向日志采集器或跨时区排查时，可以使用 UTC 时间和单行安全正文：
+
+```cpp
+log->set_pattern("[%u] [epoch_ms=%E] [%n] [%L] %q");
+```
+
+`%u` 输出完整的 UTC RFC 3339 毫秒时间，`%E` 输出 Unix 毫秒时间戳。`%q` 会将 payload 中的换行、C0 控制字符以及 Unicode NEL/行分隔符/段落分隔符显式转义，避免单条消息破坏按行切分的采集协议；确实需要原始多行文本时继续使用 `%v`。
+
 ## 文件类 Sink
 
 所有文件类 Sink 都要求父目录已经存在。`truncate=true` 表示构造时重建文件，`false` 表示追加。

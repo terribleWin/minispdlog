@@ -2,13 +2,19 @@
 #include "framework/test_fixture.h"
 #include "minispdlog/minispdlog.h"
 
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#include <share.h>
+#endif
 
 using namespace minispdlog;
 using minispdlog::tests::test_fixture;
@@ -46,7 +52,12 @@ void write_n(sinks::rotating_file_sink_mt& sink, int n, const std::string& paylo
     sink.flush();
 }
 
-} ///< 结束匿名命名空间。
+void write_file(const std::string& path, const std::string& content) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write(content.data(), static_cast<std::streamsize>(content.size()));
+}
+
+} // namespace
 
 TEST_CASE("rotating calc_filename inserts index before extension [sink][rotating]") {
     REQUIRE(sinks::rotating_file_sink_mt::calc_filename("logs/mylog.txt", 0) == "logs/mylog.txt");
@@ -152,6 +163,32 @@ TEST_CASE("rotating_file_sink works with max_files = 1 [sink][rotating]") {
     REQUIRE(file_exists(indexed(base, 1)));
     REQUIRE_FALSE(file_exists(indexed(base, 2)));
 }
+
+#ifdef _WIN32
+TEST_CASE("rotating_file_sink keeps current file active when an archive is locked [sink][rotating][windows]") {
+    test_fixture fx;
+    const auto base = fx.temp_path("locked.log").string();
+    const auto archive1 = indexed(base, 1);
+    const auto archive2 = indexed(base, 2);
+    const auto archive3 = indexed(base, 3);
+    write_file(base, std::string(48, 'A'));
+    write_file(archive1, "archive-one");
+    write_file(archive2, "archive-two");
+    write_file(archive3, "archive-three");
+
+    auto sink = std::make_shared<sinks::rotating_file_sink_mt>(base, 50, 3);
+    sink->set_pattern("%v");
+    std::unique_ptr<std::FILE, decltype(&std::fclose)> locked(_fsopen(archive3.c_str(), "rb", _SH_DENYRW),
+                                                              &std::fclose);
+    REQUIRE(locked != nullptr);
+
+    sink->log(make_msg("new-record"));
+    sink->flush();
+
+    REQUIRE(read_file(base).find("new-record") != std::string::npos);
+    REQUIRE(read_file(archive2) == "archive-two");
+}
+#endif
 
 TEST_CASE("rotating_logger_mt factory registers and writes [sink][rotating][registry]") {
     test_fixture fx;

@@ -151,5 +151,5 @@ namespace sinks {
     using json_tcp_sink_mt = json_tcp_sink<std::mutex>;
     using json_tcp_sink_st = json_tcp_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // sinks
+} // minispdlog

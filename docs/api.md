@@ -106,7 +106,7 @@ MINISPDLOG_ERROR("...");
 MINISPDLOG_CRITICAL("...");
 ```
 
-构建前定义 `MINISPDLOG_ACTIVE_LEVEL` 为 `MINISPDLOG_LEVEL_*` 之一，可在编译期移除更低等级宏调用。根 CMake 的 Release 单配置默认定义为 `MINISPDLOG_LEVEL_INFO`。
+构建前定义 `MINISPDLOG_ACTIVE_LEVEL` 为 `MINISPDLOG_LEVEL_*` 之一，可在编译期移除更低等级宏调用。根 CMake 的 Release 配置（包括单配置和 Visual Studio 多配置生成器）默认定义为 `MINISPDLOG_LEVEL_INFO`。
 
 ## 同步工厂
 
@@ -173,6 +173,8 @@ auto* pool = minispdlog::get_thread_pool();        ///< 由线程局部快照保
 
 `get_thread_pool()` 会在线程局部保存一次共享快照，使返回指针在本线程下一次调用前不会悬空；但重配置后该旧池可能已停止。需要跨调用或跨线程使用时，通过 `thread_pool_manager::instance().get()` 显式取得 `shared_ptr`。
 
+线程池公开 `overrun_count()`、`discard_count()` 和 `error_count()`。异步 Sink 写入抛异常时，工作线程不会退出；异常会计数，并由覆盖该提交代际的下一次等待式 `flush()` 报告。`flush()` 只等待其提交点之前的日志，后续流量不会无限延长本次等待。
+
 配置类型：
 
 ```cpp
@@ -237,13 +239,20 @@ struct batch_config {
 | `%d` | 两位日 | `%H` | 两位小时 |
 | `%M` | 两位分钟 | `%S` | 两位秒 |
 | `%e` | 三位毫秒 | `%f` | 六位微秒 |
+| `%u` | UTC RFC 3339 时间，毫秒精度 | `%E` | Unix epoch 毫秒 |
 | `%L` | 完整级别名 | `%l` | 单字符级别 |
-| `%n` | logger 名 | `%v` | payload |
+| `%n` | logger 名 | `%v` | 原始 payload |
+| `%q` | 单行安全 payload |  |  |
 | `%t` | 线程标识 | `%P` | 进程标识 |
 | `%s` | 源文件 basename | `%g` | 完整源文件路径 |
 | `%#` | 源码行号 | `%!` | 函数名 |
 | `%@` | `basename:line` | `%%` | 字面量 `%` |
 | `%^` | 彩色区间开始 | `%$` | 彩色区间结束 |
+
+
+`%u` 的固定格式为 `YYYY-MM-DDTHH:MM:SS.mmmZ`，不受本地时区影响。`%E` 是带符号十进制整数；Unix epoch 之前的不足一毫秒时间向负无穷方向取整，例如 epoch 前 1 微秒输出 `-1`。
+
+`%q` 不加引号，但会把回车、换行、制表符和反斜杠转义为 `\r`、`\n`、`\t` 和 `\\`，其余 C0 控制字符转义为大写十六进制 `\xHH`；Unicode NEL、LINE SEPARATOR 和 PARAGRAPH SEPARATOR 分别转义为 `\u0085`、`\u2028` 和 `\u2029`。这能保持“一条记录一行”，并防止正文中的终端控制字节直接生效；`%v` 仍按字节原样输出，便于需要保留多行消息的场景。
 
 未知 `%x` 会原样保留为 `%x`。formatter 总是在记录末尾追加 `\n`。颜色标志只设置字节区间，普通文件 Sink 不写 ANSI 转义。
 

@@ -21,7 +21,7 @@ namespace sinks {
         inline constexpr const char* red = "\033[31m";
         inline constexpr const char* magenta = "\033[35m";
         inline constexpr const char* cyan = "\033[36m";
-    } ///< 结束 color 命名空间。
+    } // color
 
     /**
  * @internal
@@ -131,5 +131,5 @@ namespace sinks {
     using color_stderr_sink_mt = color_stderr_sink<std::mutex>;
     using color_stderr_sink_st = color_stderr_sink<null_mutex>;
 
-} ///< 结束 sinks 命名空间。
-} ///< 结束 minispdlog 命名空间。
+} // sinks
+} // minispdlog

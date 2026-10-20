@@ -7,7 +7,9 @@
 | |  | | | | | | |___) | |_) | (_| | | (_) | (_| |
 |_|  |_|_|_| |_|_|____/| .__/ \__,_|_|\___/ \__, |
                        |_|                   |___/
-        SYNC • ASYNC • DURABLE • STRUCTURED
+   ┌────────────────────────────────────────────────┐
+   │  SYNC · ASYNC · CORO · DURABLE · STRUCTURED   │
+   └──────── explicit flow · clear boundaries ─────┘
 ```
 
 > 面向可解释数据路径的 C++20 日志库：同步直写、异步解耦、批量可恢复、结构化可观测。
@@ -16,16 +18,17 @@
 [![C++](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 ![Platform](https://img.shields.io/badge/core-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
 
-`minispdlog` 同时保留同步日志与异步队列：简单场景可以直接写 Sink，高吞吐场景可以切换到阻塞 MPMC 或无锁 MPSC 后端；需要更强落盘语义时，可使用双缓冲、WAL 与断尾修复；需要采集时，可直接输出 JSON Lines 或投递到回调、Qt 和 Linux UDP/TCP。
+`minispdlog` 同时保留同步日志与异步队列：简单场景直接写 Sink，高吞吐场景切换到阻塞 MPMC 或无锁 MPSC 后端；需要更强落盘语义时，可使用双缓冲、WAL 与断尾修复；需要采集时，可直接输出 JSON Lines 或投递到回调、Qt 和 Linux UDP/TCP。
 
-本项目借鉴了通用日志库的分层思想，并在致谢中说明相关参考；它拥有独立实现、独立生命周期与独立功能边界，**不是 spdlog 的源码、ABI 或 API drop-in 替代品**。迁移前请阅读[与 spdlog 的设计边界](docs/design-vs-spdlog.md)。当前版本为 `0.1.0`，公开 API 仍可能随工程化完善而演进。
+项目把逐条日志视为数据面，把 `flush` / `shutdown` 视为控制面：普通调用保持同步直写或队列投递；C++20 协程可以等待低频控制操作，而不会在当前事件循环线程执行阻塞的 Sink I/O。当前版本为 `0.1.0`，公开 API 仍可能随工程化完善而演进。
 
-### 三条清晰的数据路径
+### 可追踪的数据面与控制面
 
 ```text
-sync     call ──► format ─────────────► sink
-async    call ──► queue ──► worker ──► sink
-durable  sink ──► batch ──► WAL ─────► file
+sync     call ─────────► format ─────────────► sink
+async    call ─────────► queue ──► worker ──► sink
+durable  sink ─────────► batch ──► WAL ─────► file
+control  co_await ─────► FIFO control thread ─► flush / shutdown
 ```
 
 | 设计支柱 | 本项目的选择 |
@@ -34,6 +37,8 @@ durable  sink ──► batch ──► WAL ─────► file
 | 可说明的过载策略 | `block`、`overrun_oldest`、`discard_new`，并提供覆盖/丢弃计数 |
 | 耐久批处理 | 双缓冲批量写、WAL 回放、半截行修复，以及 `fflush` / `fsync` 档位 |
 | 结构化与旁路输出 | RFC 8259 JSON Lines、资源字段、回调、Qt，以及 Linux UDP/TCP |
+| 协程控制面 | `coro::flush` / `flush_all` / `shutdown` 在单线程 FIFO 控制执行器执行，异常回到等待点 |
+| 采集友好格式 | `%q` 保持单条记录单行，`%u` 输出 UTC RFC 3339，`%E` 输出 Unix 毫秒时间戳 |
 
 ## 五分钟上手
 
@@ -62,6 +67,19 @@ int main() {
 }
 ```
 
+### 在协程中等待刷新
+
+```cpp
+#include <minispdlog/coro.h>
+
+task<void> finish_request(std::shared_ptr<minispdlog::logger> logger) {
+    logger->info("request finished");
+    co_await minispdlog::coro::flush(logger);
+}
+```
+
+`task<void>` 由应用使用的协程运行时提供；minispdlog 只公开标准 C++20 Awaitable，不绑定某一种事件循环。默认在日志控制线程恢复，也可传入调度函数把 continuation 投递回业务执行器。完整语义见[协程控制面](docs/coroutines.md)。
+
 ### 构建并运行测试
 
 ```bash
@@ -80,6 +98,7 @@ ctest --test-dir build -C Release --output-on-failure
 | 安装、链接与第一个 logger | [快速开始](docs/getting-started.md) |
 | 全部文档与成熟度 | [文档中心](docs/README.md) |
 | 同步、异步、队列和关闭语义 | [同步与异步模型](docs/sync-async-model.md) |
+| 协程刷新、关闭与恢复调度 | [协程控制面](docs/coroutines.md) |
 | 双缓冲、WAL、断尾修复 | [耐久性与恢复](docs/durability-and-recovery.md) |
 | JSON 字段与采集约定 | [结构化日志](docs/structured-logging.md) |
 | Sink 能力与平台矩阵 | [Sink 指南](docs/sinks.md) |
@@ -114,6 +133,16 @@ ctest --test-dir build -C Release --output-on-failure
 [2026-05-31 10:30:45.123] [app] [warn] Warning: 42
 [2026-05-31 10:30:45.123] [app] [error] Error: something went wrong
 ```
+
+面向按行采集的文本日志，可使用项目提供的三个扩展标志：
+
+```cpp
+logger->set_pattern("[%u] [epoch_ms=%E] [%n] [%L] %q");
+```
+
+- `%u`：固定输出毫秒精度的 UTC RFC 3339 时间；
+- `%E`：输出带符号 Unix epoch 毫秒，便于排序和数值过滤；
+- `%q`：转义反斜杠、C0 控制字符和 Unicode 行/段落分隔符，保证一条记录保持在一行；需要原始多行正文时继续使用 `%v`。
 
 滚动文件（磁盘不无限涨）：
 
@@ -164,7 +193,7 @@ int main() {
 }
 ```
 
-每行核心字段：`time`（UTC ISO-8601，`YYYY-MM-DDTHH:MM:SS.mmmZ`）、`ts`（Unix epoch 毫秒，方便数值过滤）、`level`、`level_num`（与 `minispdlog::level` 相同：trace=0 … off=6）、`logger`、`msg`、`tid`、`pid`；有源码位置时带 `source`。字符串按 RFC 8259 规则转义，并额外转义 U+2028 / U+2029，避免换行破坏单记录边界；调用方仍需提供有效 UTF-8。`add` / `add_int` / `add_bool` / `add_null` / `with_host()` 写入静态资源字段（service、env、host 等），采集侧可映射到自己的 schema。不要占用 `time`/`ts`/`level`/`level_num`/`logger`/`msg`/`tid`/`pid`/`source`。也可 `sink->json().add(...)`，在开始打日志前配置。
+每行核心字段：`time`（UTC ISO-8601，`YYYY-MM-DDTHH:MM:SS.mmmZ`）、`ts`（Unix epoch 毫秒，方便数值过滤）、`level`、`level_num`（与 `minispdlog::level` 相同：trace=0 … off=6）、`logger`、`msg`、`tid`、`pid`；有源码位置时带 `source`。字符串按 RFC 8259 规则转义，并额外转义 U+2028 / U+2029，避免换行破坏单记录边界；非法 UTF-8 字节序列会替换为 U+FFFD，保证输出仍可被严格 JSON 解析器读取。`add` / `add_int` / `add_bool` / `add_null` / `with_host()` 写入静态资源字段（service、env、host 等），采集侧可映射到自己的 schema。不要占用 `time`/`ts`/`level`/`level_num`/`logger`/`msg`/`tid`/`pid`/`source`。也可 `sink->json().add(...)`，在开始打日志前配置。
 
 任意 sink 也可只换 formatter：`sink->set_formatter(std::make_unique<minispdlog::json_formatter>());`。生产路径用专用 sink，`set_pattern` / `set_formatter` 都锁在 JSON Lines，且会保留已配置的资源字段：`json_logger_mt`（双缓冲批量写、LF 换行）、`rotating_json_logger_mt`、`daily_json_logger_mt`，容器 stdout/stderr 用 `stdout_json_mt` / `stderr_json_mt`。异步：`async_json_file_mt` / `async_json_rotating_mt`。JSON 也可走内核网络：`json_udp_logger_mt` / `json_tcp_logger_mt`（Linux）。
 
@@ -276,7 +305,7 @@ cmake --build build -j$(nproc)          # Windows: cmake --build build --config 
 
 ## 测试体系怎么用
 
-本仓库用 **doctest** 做单元测试：**一个可执行文件** `minispdlog_tests` 包含全部用例（`tests/unit/*.cpp`），CTest 再按 15 个组件源文件注册条目，既避免重复编译，也能并行运行并定位失败组件。
+本仓库用 **doctest** 做单元测试：**一个可执行文件** `minispdlog_tests` 包含全部用例（`tests/unit/*.cpp`），CTest 再按 16 个组件源文件注册条目，既避免重复编译，也能并行运行并定位失败组件。
 
 ### 跑全部测试
 
@@ -483,7 +512,7 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 - **多 Sink**：控制台、文件、按大小滚动、按天切分、JSON Lines、批量双缓冲文件、回调、Linux UDP/TCP 网络；可选 Qt
 - **落盘耐久**：`buffered_file_sink` / `json_file_sink` 双缓冲批量 `fwrite`，WAL 回放 + 半截行 salvage；可选 `durability::fsync` 与 `install_crash_flush()`
 - **两种 formatter**：`pattern_formatter` 拼文本行；`json_formatter` 拼 JSON Lines。Sink 通过 `set_pattern` / `set_formatter` 安装（`json_*` sink 固定 JSON）
-- **占位符**：`%Y %m %d %H %M %S %e %f %l %L %v %t %P %n %s %# %! %@`；`%^` / `%$` 只标记着色区间，不输出字符
+- **占位符**：`%Y %m %d %H %M %S %e %f %u %E %l %L %v %q %t %P %n %s %# %! %@`；`%^` / `%$` 只标记着色区间，不输出字符
 - **彩色输出**：`color_*_sink` 按 `log_msg::color_range_*` 给 `[start, end)` 套 ANSI；区间为空则整行着色
 - **源码位置**：`lg.info("n={}", 7)` 经 `sourced_fmt` 在调用点捕获 file/line/func；宏 `MINISPDLOG_INFO` 用 `MINISPDLOG_LOC`
 - **线程安全**：`base_sink<Mutex>` → `_mt` / `_st`；logger 的 sink 列表 copy-on-write，热路径不加 logger 锁做 I/O
@@ -493,8 +522,17 @@ cmake --build build --target qt_log_viewer -j$(nproc)
 - **MPMC 阻塞队列**（默认）：多 worker，`block` / `overrun_oldest` / `discard_new`
 - **无锁 MPSC**（可选）：`init_lockfree_thread_pool`，单 worker；只支持 `block` / `discard_new`，`overrun_oldest` 会抛异常
 - **生产者热路径**：短消息使用 256 字节内联存储；线程池共享快照按线程缓存，仅在配置版本变化时刷新
+- **可观测故障**：`error_count()` 记录异步 Sink 异常，工作线程继续运行，等待式 `flush()` 在调用方报告异常
+- **有界刷新**：双代际屏障只等待提交点前的记录，不被后续持续流量拖住
 - **接口透明**：`async_logger` 继承 `logger`，worker 走 `backend_sink_it_`（不再入队）；`async_file_mt` / `async_buffered_file_mt` / `async_json_file_mt` / `async_json_rotating_mt` / `async_callback_mt` / `async_udp_mt` / `async_tcp_mt` / `async_json_udp_mt` / `async_json_tcp_mt`
 - **关闭**：`minispdlog::shutdown()` 先 flush，再停全局线程池，再 `drop_all`
+
+### 协程控制面
+
+- **低频控制操作**：`coro::flush(logger)`、`coro::flush_all()`、`coro::shutdown()` 可直接 `co_await`
+- **不侵入数据热路径**：逐条 `log()` 不创建协程帧，仍沿用同步或异步队列路径
+- **确定执行顺序**：共享单线程 FIFO 控制执行器串行处理刷新与关闭，异常在 `await_resume()` 重新抛出
+- **运行时中立**：可选 `resume_scheduler` 将 continuation 投递回 Asio、Qt 或业务自己的事件循环
 
 ### 工程化
 
@@ -551,7 +589,7 @@ logger->log(minispdlog::level::info, "hello {}", name); ///< 一次 log 调用�
 logger->set_formatter(std::make_unique<MyFormatter>());
 ```
 
-同一场景用同一套分隔：日期 `%Y-%m-%d`，时间 `%H:%M:%S.%e`（微秒用 `%f` 替代 `%e`），源码 `%s:%#` / `%@`，字段 `[..] [..]`。`%^`…`%$` 包住要上色的片段（默认只包 `%L`）。`log()` / `info()` 会填充时间、线程、进程和源码位置。
+同一场景用同一套分隔：日期 `%Y-%m-%d`，时间 `%H:%M:%S.%e`（微秒用 `%f` 替代 `%e`），UTC `%u`，Unix 毫秒 `%E`，源码 `%s:%#` / `%@`，字段 `[..] [..]`。`%^`…`%$` 包住要上色的片段（默认只包 `%L`）。按行采集优先用 `%q`，保留原始多行正文再用 `%v`。`log()` / `info()` 会填充时间、线程、进程和源码位置。
 
 结构化输出用 `json_formatter`（字段：UTC `time` / `ts` / `level` / `level_num` / `logger` / `msg` / `tid` / `pid`，有源码位置时带 `source`；资源字段用 `add` / `with_host`），不要用 pattern 去「手拼 JSON」。
 
@@ -570,6 +608,7 @@ minispdlog/
 ├── include/minispdlog/         # 对外头文件
 │   ├── minispdlog.h            # 用户 API / 工厂
 │   ├── async.h / async_config.h
+│   ├── coro.h                   # 协程刷新与关闭 Awaitable
 │   ├── lockfree_queue.h
 │   ├── logger.h / registry.h / level.h
 │   ├── json_formatter.h / pattern_formatter.h
@@ -604,6 +643,5 @@ minispdlog 自有代码采用 [MIT License](LICENSE)。`third_party/` 中的依�
 
 ## 致谢
 
-- [spdlog](https://github.com/gabime/spdlog) — 架构参考  
 - [fmt](https://github.com/fmtlib/fmt) — 格式化  
 - [doctest](https://github.com/doctest/doctest) — 单元测试  

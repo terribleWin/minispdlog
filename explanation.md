@@ -1,10 +1,10 @@
 # minispdlog 项目说明
 
 > [!NOTE]
-> 本文是保留的长篇架构导读，适合了解演进背景，但个别内部类型名和热路径描述可能滞后于当前实现。例如异步热路径现在使用 raw logger 指针配合析构排空，并用 256 字节内联 payload 缓冲；`file_sink` 当前基于 `FILE*`。专题语义请优先查看[文档中心](docs/README.md)、[同步与异步模型](docs/sync-async-model.md)、[耐久性与恢复](docs/durability-and-recovery.md)和 [API 速查](docs/api.md)。
+> 本文是保留的长篇架构导读，适合了解演进背景，但个别内部类型名和热路径描述可能滞后于当前实现。例如异步热路径现在使用 raw logger 指针配合析构排空，并用 256 字节内联 payload 缓冲；`file_sink` 当前基于 `FILE*`。专题语义请优先查看[文档中心](docs/README.md)、[同步与异步模型](docs/sync-async-model.md)、[协程控制面](docs/coroutines.md)、[耐久性与恢复](docs/durability-and-recovery.md)和 [API 速查](docs/api.md)。
 
 > 本文结合仓库**真实代码与路径**，说明项目定位、分层架构、核心数据流、技术栈落地方式、线程安全边界，以及测试 / Qt 等工程用法。  
-> 标准：**C++20** · 架构参考 [spdlog](https://github.com/gabime/spdlog) · 格式化依赖 `third_party/fmt`
+> 标准：**C++20** · 同步 / 异步双数据路径 · 协程控制面 · 格式化依赖 `third_party/fmt`
 
 ---
 
@@ -476,8 +476,8 @@ Sink 另有一把锁，避免多 worker 同时写同一文件；设计上先放�
 
 | 项 | 说明 |
 |----|------|
-| 框架 | doctest，源码只链接为一个 `minispdlog_tests`；CTest 按 15 个组件源文件注册条目 |
-| 用例 | `tests/unit/`：level / sink / logger / registry / pattern / queue / async / utils / callback / daily / rotating / json / buffered / network / qt |
+| 框架 | doctest，源码只链接为一个 `minispdlog_tests`；CTest 按 16 个组件源文件注册条目 |
+| 用例 | `tests/unit/`：level / sink / logger / registry / pattern / queue / async / coro / utils / callback / daily / rotating / json / buffered / network / qt |
 | 辅助 | `mock_sink` 内存断言；`test_fixture` 临时目录 RAII（析构用 `error_code`，避免 noexcept 里抛异常） |
 | 运行 | `./build/tests/minispdlog_tests`；`ctest --test-dir build --output-on-failure` |
 | 过滤 | `-tc='*json*'` 或标签；PowerShell 下 `[json]` 可能被当成通配符 |

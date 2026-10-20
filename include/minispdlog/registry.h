@@ -72,4 +72,4 @@ private:
     details::atomic_shared_ptr<logger> default_logger_;
 };
 
-} ///< 结束 minispdlog 命名空间。
+} // minispdlog
